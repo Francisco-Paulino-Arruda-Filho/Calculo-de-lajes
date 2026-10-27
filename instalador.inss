@@ -1,0 +1,25 @@
+[Setup]
+AppName=Cálculo de Lajes
+AppVersion=1.0.0
+DefaultDirName={autopf}\CalculoLajes
+DefaultGroupName=Cálculo de Lajes
+OutputBaseFilename=CalculoLajes-Setup-1.0.0
+OutputDir=instalador
+Compression=lzma2
+SolidCompression=yes
+ArchitecturesInstallIn64BitMode=x64compatible
+SetupIconFile=assets\ico.ico
+UninstallDisplayIcon={app}\CalculoLajes.exe
+
+[Files]
+Source: "dist\CalculoLajes\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+
+[Icons]
+Name: "{group}\Cálculo de Lajes"; Filename: "{app}\CalculoLajes.exe"
+Name: "{autodesktop}\Cálculo de Lajes"; Filename: "{app}\CalculoLajes.exe"; Tasks: desktopicon
+
+[Tasks]
+Name: "desktopicon"; Description: "Criar atalho na área de trabalho"
+
+[Run]
+Filename: "{app}\CalculoLajes.exe"; Description: "Abrir o programa"; Flags: nowait postinstall skipifsilent

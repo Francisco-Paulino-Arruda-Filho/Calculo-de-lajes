@@ -1,6 +1,6 @@
 ---
 layout: default
-title: Cálculo de Lajes Maciças
+title: Calculadora de Lajes Maciças
 ---
 
 <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>

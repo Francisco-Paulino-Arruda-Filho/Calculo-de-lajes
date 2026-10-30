@@ -1,4 +1,4 @@
-# Cálculo de Lajes Maciças de Concreto Armado
+# Calculadora de Lajes Maciças de Concreto Armado
 
 Documentação do código de cálculo (`calculo.py`)
 

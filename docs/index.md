@@ -5,7 +5,7 @@ title: Cálculo de Lajes Maciças
 
 <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 
-# Cálculo de Lajes Maciças de Concreto Armado
+# Calculadora de Lajes Maciças de Concreto Armado
 
 Documentação do código de cálculo (`calculo.py`)
 

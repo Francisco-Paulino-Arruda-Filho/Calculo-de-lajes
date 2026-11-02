@@ -1,439 +1,680 @@
 import io
+import os
+import sys
 from contextlib import redirect_stdout
+from math import ceil
 
-from PySide6.QtCore import QLocale, QMarginsF, Qt
-from PySide6.QtGui import (
-    QFontDatabase, QKeySequence, QPageLayout, QPageSize, QShortcut,
-)
+from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QDoubleSpinBox, QFileDialog, QFrame,
-    QGridLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-    QPlainTextEdit, QPushButton, QScrollArea, QSplitter, QStyle,
-    QVBoxLayout, QWidget,
+    QAbstractItemView, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout,
+    QGroupBox, QHBoxLayout, QHeaderView, QLabel, QMainWindow, QMessageBox,
+    QPlainTextEdit, QPushButton, QTabWidget, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 import calculo
 
 
-ESTILO = """
-QMainWindow, QWidget#raiz { background: #f4f6f8; }
-QWidget { font-size: 13px; color: #1d2b3a; }
+# ---------------------------------------------------------------------------
+# Núcleo sem interface (usado pela janela e pelo teste de paridade)
+# ---------------------------------------------------------------------------
 
-QFrame#cabecalho { background: #12304a; }
-QLabel#titulo { color: #ffffff; font-size: 19px; font-weight: 600; }
-QLabel#subtitulo { color: #a9c1d6; font-size: 12px; }
+def caminho_recurso(nome):
+    bases = []
+    if getattr(sys, "frozen", False):
+        bases.append(getattr(sys, "_MEIPASS", os.path.dirname(sys.executable)))
+    bases.append(os.path.dirname(os.path.abspath(__file__)))
+    for base in bases:
+        for sub in ("assets", ""):
+            p = os.path.join(base, sub, nome)
+            if os.path.isfile(p):
+                return p
+    return None
 
-QScrollArea { border: none; background: transparent; }
-QWidget#painel { background: transparent; }
 
-QGroupBox {
-    background: #ffffff;
-    border: 1px solid #dde3ea;
-    border-radius: 8px;
-    margin-top: 14px;
-    padding: 16px 10px 10px 10px;
-    font-weight: 600;
-    color: #12304a;
+def montar_dados_padrao(lx, ly, vinculacao, caa, phi, q, h_cm):
+    """Reproduz exatamente o dicionário que calculo.entrada() devolve."""
+    info = calculo.classificar_laje(lx, ly)
+    uni = info["unidirecional"]
+    if vinculacao not in info["casos"]:
+        raise ValueError("Selecione a vinculação da laje.")
+    tipo = "piso"
+    cob_nbr = calculo.COB_NOMINAL[caa]
+    cob = float(cob_nbr)
+    fck = calculo.FCK_MIN_CAA[caa]
+    agregado, alpha_E = calculo.AGREGADOS["2"]
+    caso = 1 if uni else vinculacao
+    apoio_1d = vinculacao if uni else None
+    h = h_cm / 100.0
+    h_min = calculo.altura_minima(tipo)
+    _, h_est, _, _ = calculo.estimar_h_bastos(
+        info["lx"], info["ly"], caso, cob / 1000, phi / 1000)
+    return dict(
+        lx=info["lx"], ly=info["ly"], caso=caso, unidirecional=uni,
+        apoio_1d=apoio_1d, tipo=tipo, caa=caa, cob=cob, cob_nbr=cob_nbr,
+        fck=fck, fyk=500.0, phi=phi, agregado=agregado, alpha_E=alpha_E,
+        gc=25.0, g_contrapiso=0.0, g_revest_inf=0.0, g_piso=0.0,
+        g_paredes=0.0, g_outros=1.28, q=q, psi2=0.30, h=h, h_min=h_min,
+        h_est=h_est, t0=14.0 / 30.0, tinf=70.0,
+    )
+
+
+def gerar_memoria(dados):
+    """Executa o modelo e captura a mesma saída do fluxo de terminal."""
+    d, r = calculo.executar_modelo(dados)
+    partes = {}
+
+    def capturar(chave, func, *args):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            func(*args)
+        partes[chave] = buf.getvalue()
+
+    if d["unidirecional"]:
+        capturar("memoria", calculo.imprimir_unidirecional, d, r)
+    else:
+        capturar("memoria", calculo.imprimir, d, r)
+    capturar("detalhamento", calculo.imprimir_detalhamento, r)
+    capturar("parecer", calculo.imprimir_parecer_final, d, r)
+    capturar("auditoria", calculo.imprimir_auditoria_normativa, r)
+    partes["completo"] = (partes["memoria"] + partes["detalhamento"]
+                          + partes["parecer"] + partes["auditoria"])
+    return d, r, partes
+
+
+# ---------------------------------------------------------------------------
+# Linhas das tabelas de resultados (apenas leitura dos resultados prontos)
+# ---------------------------------------------------------------------------
+
+def f2(v, nd=2):
+    return f"{v:.{nd}f}".replace(".", ",")
+
+
+def situacao(ok):
+    return "ATENDE" if ok else "NÃO ATENDE"
+
+
+def linhas_cargas_momentos(d, r):
+    if d["unidirecional"]:
+        linhas = [
+            ("Carga permanente total gk", f2(r["g"]), "kN/m²"),
+            ("Carga variável qk", f2(r["q"]), "kN/m²"),
+            ("Carga de cálculo (ELU)", f2(r["pd"]), "kN/m²"),
+            ("Carga quase permanente (ELS)", f2(r["pqp"]), "kN/m²"),
+            ("Momento positivo de cálculo", f2(r["Mpos"]), "kN·m/m"),
+        ]
+        if r["Mneg"] > 0:
+            linhas.append(("Momento negativo de cálculo (módulo)", f2(r["Mneg"]), "kN·m/m"))
+        return linhas
+    linhas = [
+        ("Carga permanente total g", f2(r["g"]), "kN/m²"),
+        ("Carga variável q", f2(d["q"]), "kN/m²"),
+        ("Carga de cálculo (ELU)", f2(r["p_elu"]), "kN/m²"),
+        ("Carga quase permanente (ELS)", f2(r["p_qp"]), "kN/m²"),
+        ("Coeficiente μx⁺", f2(r["mu_xp"]), ""),
+        ("Coeficiente μy⁺", f2(r["mu_yp"]), ""),
+    ]
+    if r["mu_xn"]:
+        linhas.append(("Coeficiente μx⁻", f2(r["mu_xn"]), ""))
+    if r["mu_yn"]:
+        linhas.append(("Coeficiente μy⁻", f2(r["mu_yn"]), ""))
+    linhas += [
+        ("Momento Mx⁺ (ELU)", f2(r["Mx_pos"]), "kN·m/m"),
+        ("Momento My⁺ (ELU)", f2(r["My_pos"]), "kN·m/m"),
+    ]
+    if r["Mx_neg"]:
+        linhas.append(("Momento Mx⁻ (ELU)", f2(r["Mx_neg"]), "kN·m/m"))
+    if r["My_neg"]:
+        linhas.append(("Momento My⁻ (ELU)", f2(r["My_neg"]), "kN·m/m"))
+    return linhas
+
+
+def linhas_reacoes(d, r):
+    if d["unidirecional"]:
+        return [("Reação no apoio A", f2(r["Ra"]), "kN/m"),
+                ("Reação no apoio B", f2(r["Rb"]), "kN/m")]
+    linhas = []
+    for chave, nome in (("Rx_ap", "Rx em borda apoiada"),
+                        ("Rx_eng", "Rx' em borda engastada"),
+                        ("Ry_ap", "Ry em borda apoiada"),
+                        ("Ry_eng", "Ry' em borda engastada")):
+        if r[chave] is not None:
+            linhas.append((nome, f2(r[chave]), "kN/m"))
+    linhas.append(("Rx crítico", f2(r["Rx"]), "kN/m"))
+    linhas.append(("Ry crítico", f2(r["Ry"]), "kN/m"))
+    return linhas
+
+
+def linhas_armaduras(d, r):
+    if d["unidirecional"]:
+        mapa = [("principal_positiva", "Principal — momento positivo", "Aspos_calc", "Aspos"),
+                ("principal_negativa", "Principal — momento negativo", "Asneg_calc", "Asneg"),
+                ("distribuicao", "Distribuição", None, "Asdist")]
+    else:
+        mapa = [("x_positiva", "Direção X — positiva", "As_xp_calc", "As_xp"),
+                ("y_positiva", "Direção Y — positiva", "As_yp_calc", "As_yp"),
+                ("x_negativa", "Direção X — negativa", "As_xn_calc", "As_xn"),
+                ("y_negativa", "Direção Y — negativa", "As_yn_calc", "As_yn")]
+    linhas = []
+    for chave, nome, calc, req in mapa:
+        v = r["detalhamento"][chave]
+        if v["n"] <= 0:
+            continue
+        linhas.append((
+            nome,
+            f2(r[calc]) if calc else "—",
+            f2(r[req]),
+            f"{v['n']} φ {d['phi']:g} mm",
+            f2(v["s_cm"]),
+            f2(v["As_fornecida"]),
+            f2(v["livre_mm"] / 10),
+            v["status"],
+        ))
+    return linhas
+
+
+def linhas_flechas(d, r):
+    ok250 = r["f_total"] <= r["lim_250"]
+    ok350 = r["f_q"] <= r["lim_350"]
+    return [
+        ("Momento de fissuração Mr", f2(r["Mr"]), "kN·m/m", ""),
+        ("Momento característico Ma", f2(r["Ma"]), "kN·m/m", ""),
+        ("Estádio", r["estadio"], "", ""),
+        ("Flecha imediata", f2(r["f_imediata"] * 100), "cm", ""),
+        ("Flecha diferida", f2(r["f_diferida"] * 100), "cm", ""),
+        ("Flecha final", f2(r["f_total"] * 100), "cm", situacao(ok250)),
+        ("Limite lx/250", f2(r["lim_250"] * 100), "cm", ""),
+        ("Flecha da parcela variável", f2(r["f_q"] * 100), "cm", situacao(ok350)),
+        ("Referência lx/350", f2(r["lim_350"] * 100), "cm", ""),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Desenho das vinculações (QPainter)
+# ---------------------------------------------------------------------------
+
+# Bordas engastadas de cada caso: (esquerda, direita, superior, inferior)
+# Convenção do desenho: lx = horizontal (bordas superior/inferior têm comprimento lx),
+#                       ly = vertical   (bordas esquerda/direita têm comprimento ly).
+F, T = False, True
+BORDAS_UNI = {
+    1: (F, F, F, F),   # apoiada - apoiada
+    2: (T, F, F, F),   # engastada - apoiada
+    3: (T, T, F, F),   # engastada - engastada
 }
-QGroupBox::title {
-    subcontrol-origin: margin;
-    left: 12px;
-    padding: 0 6px;
-}
-QLabel#rotulo { color: #5b6b7b; font-size: 11px; font-weight: 400; }
-
-QDoubleSpinBox, QComboBox {
-    background: #fbfcfd;
-    border: 1px solid #cfd8e1;
-    border-radius: 5px;
-    padding: 3px 6px;
-    min-height: 24px;
-    font-weight: 400;
-}
-QDoubleSpinBox:hover, QComboBox:hover { border-color: #9fb3c6; }
-QDoubleSpinBox:focus, QComboBox:focus { border: 1px solid #1f6feb; background: #ffffff; }
-QComboBox QAbstractItemView {
-    background: #ffffff;
-    border: 1px solid #cfd8e1;
-    selection-background-color: #dbe9fd;
-    selection-color: #12304a;
-    outline: none;
+# ATENÇÃO: confira esta tabela com a numeração usada no seu calculo.py
+BORDAS_BI = {
+    1: (F, F, F, F),   # 4 bordas apoiadas
+    2: (F, F, F, T),   # 1 borda menor engastada
+    3: (T, F, F, F),   # 1 borda maior engastada
+    4: (T, F, F, T),   # 2 bordas adjacentes engastadas
+    5: (F, F, T, T),   # 2 bordas menores engastadas
+    6: (T, T, F, F),   # 2 bordas maiores engastadas
+    7: (T, T, F, T),   # 3 bordas engastadas (1 menor apoiada)
+    8: (T, F, T, T),   # 3 bordas engastadas (1 maior apoiada)
+    9: (T, T, T, T),   # 4 bordas engastadas
 }
 
-QPushButton {
-    background: #ffffff;
-    border: 1px solid #cfd8e1;
-    border-radius: 6px;
-    padding: 7px 14px;
-    font-weight: 500;
-}
-QPushButton:hover { background: #eef3f8; }
-QPushButton:pressed { background: #e0e8f0; }
-QPushButton:disabled { color: #9aa8b5; background: #f1f4f7; }
-QPushButton#primario {
-    background: #1f6feb;
-    border: 1px solid #1a5fcc;
-    color: #ffffff;
-    font-weight: 600;
-}
-QPushButton#primario:hover { background: #3a82f0; }
-QPushButton#primario:pressed { background: #1a5fcc; }
 
-QPlainTextEdit {
-    background: #ffffff;
-    border: 1px solid #dde3ea;
-    border-radius: 8px;
-    padding: 12px;
-    selection-background-color: #cfe1fb;
-}
-QSplitter::handle { background: transparent; }
-QScrollBar:vertical { background: transparent; width: 10px; margin: 2px; }
-QScrollBar::handle:vertical { background: #c5d0db; border-radius: 4px; min-height: 30px; }
-QScrollBar::handle:vertical:hover { background: #a9b8c7; }
-QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
+class VinculacaoWidget(QWidget):
+    """Desenha os casos de vinculação da laje e destaca o selecionado."""
+    clicado = Signal(object)          # emite a chave do caso clicado
 
-QStatusBar { background: #ffffff; border-top: 1px solid #dde3ea; color: #5b6b7b; }
-QToolTip { background: #12304a; color: #ffffff; border: none; padding: 4px 8px; }
-"""
-
-LOCAL = QLocale(QLocale.Portuguese, QLocale.Brazil)
-
-
-class SpinSemRoda(QDoubleSpinBox):
-    """Evita alterar valores sem querer ao rolar o painel com o mouse."""
+    COLUNAS = 3
+    ALTURA_LEGENDA = 64
 
     def __init__(self):
         super().__init__()
-        self.setFocusPolicy(Qt.StrongFocus)
-        self.setLocale(LOCAL)
-        self.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._casos = {}              # chave -> descrição
+        self._uni = True
+        self._sel = None
+        self._rects = {}
+        self.setMinimumSize(520, 360)
 
-    def wheelEvent(self, e):
-        if self.hasFocus():
-            super().wheelEvent(e)
-        else:
-            e.ignore()
+    # ---------- API ----------
+    def configurar(self, casos, unidirecional):
+        self._casos = dict(casos)
+        self._uni = unidirecional
+        self._sel = None
+        self.update()
+
+    def selecionar(self, chave):
+        self._sel = chave
+        self.update()
+
+    # ---------- interação ----------
+    def mousePressEvent(self, ev):
+        pos = ev.position()
+        for k, r in self._rects.items():
+            if r.contains(pos):
+                self.clicado.emit(k)
+                return
+
+    # ---------- desenho ----------
+    def _bordas(self, chave):
+        tabela = BORDAS_UNI if self._uni else BORDAS_BI
+        try:
+            return tabela.get(int(chave), (F, F, F, F))
+        except (TypeError, ValueError):
+            return (F, F, F, F)
+
+    def paintEvent(self, _ev):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self._rects = {}
+        n = len(self._casos)
+        if n == 0:
+            p.end()
+            return
+
+        pal = self.palette()
+        txt = pal.color(pal.ColorRole.WindowText)
+        destaque = pal.color(pal.ColorRole.Highlight)
+        fundo = pal.color(pal.ColorRole.Base)
+        suave = QColor(txt)
+        suave.setAlpha(60)
+
+        linhas = ceil(n / self.COLUNAS)
+        area_h = self.height() - self.ALTURA_LEGENDA
+        cw = self.width() / self.COLUNAS
+        ch = area_h / linhas
+
+        for i, (chave, desc) in enumerate(self._casos.items()):
+            r, c = divmod(i, self.COLUNAS)
+            cel = QRectF(c * cw, r * ch, cw, ch).adjusted(6, 6, -6, -6)
+            self._rects[chave] = cel
+            sel = (chave == self._sel)
+
+            # cartão
+            p.setPen(QPen(destaque if sel else suave, 3 if sel else 1))
+            p.setBrush(fundo)
+            p.drawRoundedRect(cel, 8, 8)
+
+            # legenda do caso (embaixo do cartão)
+            fonte = QFont(self.font())
+            fonte.setPointSizeF(max(8.0, fonte.pointSizeF() - 1))
+            fonte.setBold(sel)
+            p.setFont(fonte)
+            p.setPen(txt)
+            alt_txt = 34
+            rtxt = QRectF(cel.left() + 6, cel.bottom() - alt_txt,
+                          cel.width() - 12, alt_txt - 4)
+            p.drawText(rtxt, int(Qt.AlignmentFlag.AlignHCenter
+                                 | Qt.AlignmentFlag.AlignVCenter
+                                 | Qt.TextFlag.TextWordWrap), str(desc))
+
+            # laje: retângulo proporcional, centralizado no espaço restante
+            livre = QRectF(cel.left() + 18, cel.top() + 16,
+                           cel.width() - 36, cel.height() - alt_txt - 30)
+            prop = 0.75                                  # largura / altura
+            h = min(livre.height(), livre.width() / prop)
+            w = h * prop
+            laje = QRectF(livre.center().x() - w / 2,
+                          livre.center().y() - h / 2, w, h)
+            self._desenhar_laje(p, laje, self._bordas(chave), chave,
+                                txt, destaque if sel else txt)
+
+        self._desenhar_legenda(p, txt)
+        p.end()
+
+    def _desenhar_laje(self, p, laje, bordas, chave, cor_txt, cor_laje):
+        esq, dire, sup, inf = bordas
+        esp = 8.0
+        # hachuras das bordas engastadas (fora da laje)
+        faixas = (
+            (esq,  QRectF(laje.left() - esp, laje.top(), esp, laje.height())),
+            (dire, QRectF(laje.right(), laje.top(), esp, laje.height())),
+            (sup,  QRectF(laje.left(), laje.top() - esp, laje.width(), esp)),
+            (inf,  QRectF(laje.left(), laje.bottom(), laje.width(), esp)),
+        )
+        for engastada, faixa in faixas:
+            if engastada:
+                self._hachurar(p, faixa, cor_txt)
+
+        # contorno da laje
+        p.setPen(QPen(cor_laje, 2.2))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRect(laje)
+
+        # linha grossa nas bordas engastadas
+        p.setPen(QPen(cor_txt, 3))
+        if esq:
+            p.drawLine(laje.topLeft(), laje.bottomLeft())
+        if dire:
+            p.drawLine(laje.topRight(), laje.bottomRight())
+        if sup:
+            p.drawLine(laje.topLeft(), laje.topRight())
+        if inf:
+            p.drawLine(laje.bottomLeft(), laje.bottomRight())
+
+        # número do caso num círculo
+        raio = max(min(laje.width(), laje.height()) * 0.17, 11)
+        c = laje.center()
+        p.setPen(QPen(cor_laje, 1.8))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(c, raio, raio)
+        f = QFont(self.font())
+        f.setBold(True)
+        f.setPointSizeF(f.pointSizeF() + 1)
+        p.setFont(f)
+        p.setPen(cor_laje)
+        p.drawText(QRectF(c.x() - raio, c.y() - raio, 2 * raio, 2 * raio),
+                   int(Qt.AlignmentFlag.AlignCenter), str(chave))
+
+    @staticmethod
+    def _hachurar(p, faixa, cor):
+        p.save()
+        p.setClipRect(faixa)
+        p.setPen(QPen(cor, 1.2))
+        passo = 4
+        h = faixa.height()
+        x = int(-h)
+        while x < faixa.width():
+            p.drawLine(faixa.left() + x, faixa.bottom(),
+                       faixa.left() + x + h, faixa.top())
+            x += passo
+        p.restore()
+
+    def _desenhar_legenda(self, p, cor):
+        y = self.height() - self.ALTURA_LEGENDA + 8
+        f = QFont(self.font())
+        f.setPointSizeF(max(8.0, f.pointSizeF() - 1))
+        p.setFont(f)
+        p.setPen(cor)
+        # amostra: borda hachurada
+        amostra = QRectF(14, y + 10, 26, 16)
+        self._hachurar(p, QRectF(amostra.left(), amostra.top() - 7, amostra.width(), 7), cor)
+        p.setPen(QPen(cor, 3))
+        p.drawLine(amostra.topLeft(), amostra.topRight())
+        p.setPen(cor)
+        p.drawText(QRectF(50, y, self.width() - 60, 26),
+                   int(Qt.AlignmentFlag.AlignVCenter),
+                   "Borda hachurada: engastada   |   borda sem hachura: simplesmente apoiada")
+        p.drawText(QRectF(14, y + 28, self.width() - 28, 24),
+                   int(Qt.AlignmentFlag.AlignVCenter),
+                   "lx = menor vão (horizontal)   |   ly = maior vão (vertical)   |   "
+                   "clique em um desenho para selecionar o caso")
 
 
-class ComboSemRoda(QComboBox):
-    def __init__(self):
-        super().__init__()
-        self.setFocusPolicy(Qt.StrongFocus)
+# ---------------------------------------------------------------------------
+# Interface
+# ---------------------------------------------------------------------------
 
-    def wheelEvent(self, e):
-        if self.hasFocus():
-            super().wheelEvent(e)
-        else:
-            e.ignore()
-
-
-def spin(minimo, maximo, valor, casas=2, sufixo="", dica=""):
-    s = SpinSemRoda()
+def spin(minimo, maximo, valor, casas=2, sufixo="", passo=None):
+    s = QDoubleSpinBox()
     s.setRange(minimo, maximo)
     s.setDecimals(casas)
     s.setValue(valor)
     if sufixo:
         s.setSuffix(f" {sufixo}")
-    if dica:
-        s.setToolTip(dica)
+    if passo:
+        s.setSingleStep(passo)
     return s
 
 
-def combo(itens, dica=""):
-    """itens: lista de (texto, valor)"""
-    c = ComboSemRoda()
-    for texto, valor in itens:
-        c.addItem(texto, valor)
-    if dica:
-        c.setToolTip(dica)
-    return c
+def nova_tabela(colunas):
+    t = QTableWidget(0, len(colunas))
+    t.setHorizontalHeaderLabels(colunas)
+    t.verticalHeader().setVisible(False)
+    t.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    t.setAlternatingRowColors(True)
+    t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+    t.horizontalHeader().setStretchLastSection(True)
+    return t
 
 
-def campo(rotulo, widget):
-    """Rótulo pequeno acima do campo."""
-    w = QWidget()
-    lay = QVBoxLayout(w)
-    lay.setContentsMargins(0, 0, 0, 0)
-    lay.setSpacing(3)
-    lb = QLabel(rotulo)
-    lb.setObjectName("rotulo")
-    lay.addWidget(lb)
-    lay.addWidget(widget)
-    return w
+def preencher(tabela, linhas):
+    tabela.setRowCount(len(linhas))
+    for i, linha in enumerate(linhas):
+        for j, v in enumerate(linha):
+            tabela.setItem(i, j, QTableWidgetItem(str(v)))
+    tabela.resizeColumnsToContents()
 
 
-def grupo(titulo, itens, colunas=2):
-    """itens: (rótulo, widget) ou (rótulo, widget, largura_em_colunas)."""
-    g = QGroupBox(titulo)
-    grade = QGridLayout(g)
-    grade.setHorizontalSpacing(12)
-    grade.setVerticalSpacing(10)
-    for c in range(colunas):
-        grade.setColumnStretch(c, 1)
-    linha = coluna = 0
-    for item in itens:
-        rotulo, w = item[0], item[1]
-        largura = item[2] if len(item) > 2 else 1
-        if coluna + largura > colunas:
-            linha += 1
-            coluna = 0
-        grade.addWidget(campo(rotulo, w), linha, coluna, 1, largura)
-        coluna += largura
-        if coluna >= colunas:
-            linha += 1
-            coluna = 0
-    return g
+def texto_mono():
+    e = QPlainTextEdit()
+    e.setReadOnly(True)
+    e.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+    e.setFont(QFont("Consolas", 10))
+    return e
 
 
 class Janela(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Cálculo de Lajes Maciças — NBR 6118")
+        self.setWindowTitle("Calculadora de Lajes Maciças — NBR 6118")
         self.resize(1280, 800)
-        self.setMinimumSize(980, 600)
-        self.setStyleSheet(ESTILO)
+        self.info = None
 
-        self._criar_campos()
-        self._montar_interface()
-        self._atalhos()
-        self._salvar_padroes()
-        self._mostrar_vazio()
+        self.tabs = QTabWidget()
+        self.setCentralWidget(self.tabs)
+        self.tabs.addTab(self._aba_tipo(), "1. Tipo de laje")
+        self.tabs.addTab(self._aba_dados(), "2. Dados de entrada")
+        self.tabs.addTab(self._aba_resultados(), "3. Resultados")
+        self.tabs.setTabEnabled(1, False)
+        self.tabs.setTabEnabled(2, False)
 
-    # ------------------------------------------------------------------
-    # campos
-    # ------------------------------------------------------------------
-    def _criar_campos(self):
-        self.lx = spin(0.5, 20, 4.0, 3, "m", "Menor vão da laje")
-        self.ly = spin(0.5, 40, 5.0, 3, "m", "Maior vão da laje")
-        self.tipo = combo([("Piso", "piso"), ("Cobertura", "cobertura")])
-        self.caso = combo(
-            [(f"{k} — {calculo.DESCRICAO[k]}", k) for k in range(1, 7)],
-            "Condição de apoio da laje")
-        self.caa = combo([("I", "I"), ("II", "II"), ("III", "III"), ("IV", "IV")],
-                         "Classe de agressividade ambiental")
-        self.caa.setCurrentIndex(1)
-        self.cob = spin(0, 80, 0, 1, "mm", "0 = cobrimento nominal da CAA")
-        self.fck = spin(20, 40, 25, 0, "MPa")
-        self.fyk = spin(400, 600, 500, 0, "MPa")
-        self.phi = spin(4, 20, 8, 1, "mm", "Bitola da armadura")
-        self.agregado = combo([(n, k) for k, (n, _) in calculo.AGREGADOS.items()])
-        self.agregado.setCurrentIndex(1)
-        self.gc = spin(20, 30, 25, 1, "kN/m³")
-        self.g_contrapiso = spin(0, 20, 0, 2, "kN/m²")
-        self.g_revest_inf = spin(0, 20, 0, 2, "kN/m²")
-        self.g_piso = spin(0, 20, 0, 2, "kN/m²")
-        self.g_paredes = spin(0, 20, 0, 2, "kN/m²")
-        self.g_outros = spin(0, 20, 0, 2, "kN/m²")
-        self.q = spin(0, 50, 2.0, 2, "kN/m²", "Carga variável")
-        self.psi2 = spin(0, 1, 0.3, 2, "", "Fator de combinação quase permanente")
-        self.h = spin(0, 0.6, 0, 3, "m", "0 = altura calculada automaticamente")
-        self.t0 = spin(0, 70, 0.47, 2, "meses", "Idade do concreto no carregamento")
-        self.tinf = spin(0, 200, 70, 0, "meses", "Tempo final para fluência")
+        self.atualizar_classificacao()
 
-    # ------------------------------------------------------------------
-    # interface
-    # ------------------------------------------------------------------
-    def _montar_interface(self):
-        raiz = QWidget()
-        raiz.setObjectName("raiz")
-        coluna = QVBoxLayout(raiz)
-        coluna.setContentsMargins(0, 0, 0, 0)
-        coluna.setSpacing(0)
-        coluna.addWidget(self._cabecalho())
+    # ---------------- aba 1 ----------------
+    def _aba_tipo(self):
+        self.vao_a = spin(0.1, 40, 4.0, 3, "m", 0.1)
+        self.vao_b = spin(0.1, 40, 5.0, 3, "m", 0.1)
+        self.vao_a.setKeyboardTracking(False)
+        self.vao_b.setKeyboardTracking(False)
+        self.vao_a.valueChanged.connect(self.atualizar_classificacao)
+        self.vao_b.valueChanged.connect(self.atualizar_classificacao)
 
-        # --- painel de entrada (rolável) ---
-        form = QVBoxLayout()
-        form.setSpacing(4)
-        form.addWidget(grupo("Geometria", [
-            ("lx (menor vão)", self.lx), ("ly (maior vão)", self.ly),
-            ("Tipo", self.tipo), ("h (0 = automático)", self.h),
-            ("Caso estrutural", self.caso, 2)]))
-        form.addWidget(grupo("Materiais e durabilidade", [
-            ("CAA", self.caa), ("Cobrimento (0 = nominal)", self.cob),
-            ("fck", self.fck), ("fyk", self.fyk),
-            ("Bitola φ", self.phi), ("Agregado", self.agregado)]))
-        form.addWidget(grupo("Cargas", [
-            ("Peso esp. concreto", self.gc), ("Variável q", self.q),
-            ("Contrapiso", self.g_contrapiso), ("Revest. inferior", self.g_revest_inf),
-            ("Piso final", self.g_piso), ("Paredes", self.g_paredes),
-            ("Outros permanentes", self.g_outros), ("ψ2", self.psi2)]))
-        form.addWidget(grupo("Fluência", [
-            ("t0", self.t0), ("t final", self.tinf)]))
-        form.addStretch()
+        g_vaos = QGroupBox("Dimensões da laje")
+        f = QFormLayout(g_vaos)
+        f.addRow("Vão A", self.vao_a)
+        f.addRow("Vão B", self.vao_b)
+        f.addRow(QLabel("A ordem não importa: o menor vão vira lx."))
 
-        painel = QWidget()
-        painel.setObjectName("painel")
-        painel.setLayout(form)
-        rolagem = QScrollArea()
-        rolagem.setWidgetResizable(True)
-        rolagem.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        rolagem.setWidget(painel)
+        self.lbl_titulo = QLabel()
+        self.lbl_titulo.setStyleSheet("font-size: 18px; font-weight: bold;")
+        self.lbl_lx = QLabel()
+        self.lbl_ly = QLabel()
+        self.lbl_lam = QLabel()
+        self.lbl_nota = QLabel()
+        self.lbl_nota.setWordWrap(True)
+        g_class = QGroupBox("Classificação automática")
+        c = QFormLayout(g_class)
+        c.addRow(self.lbl_titulo)
+        c.addRow("lx (menor vão)", self.lbl_lx)
+        c.addRow("ly (maior vão)", self.lbl_ly)
+        c.addRow("λ = ly/lx", self.lbl_lam)
+        c.addRow(self.lbl_nota)
 
-        esquerda = QWidget()
-        lay_esq = QVBoxLayout(esquerda)
-        lay_esq.setContentsMargins(0, 0, 0, 0)
-        lay_esq.setSpacing(10)
-        lay_esq.addWidget(rolagem, 1)
-        lay_esq.addLayout(self._barra_acoes())
-        esquerda.setMinimumWidth(400)
+        self.cmb_vinc = QComboBox()
+        self.cmb_vinc.currentIndexChanged.connect(self.vinculacao_mudou)
+        g_vinc = QGroupBox("Vinculação")
+        v = QVBoxLayout(g_vinc)
+        v.addWidget(QLabel("Escolha o caso no combo ou clicando no desenho:"))
+        v.addWidget(self.cmb_vinc)
 
-        # --- saída ---
-        self.saida = QPlainTextEdit()
-        self.saida.setReadOnly(True)
-        self.saida.setLineWrapMode(QPlainTextEdit.NoWrap)
-        fonte = QFontDatabase.systemFont(QFontDatabase.FixedFont)
-        fonte.setPointSize(10)
-        self.saida.setFont(fonte)
+        esquerda = QVBoxLayout()
+        esquerda.addWidget(g_vaos)
+        esquerda.addWidget(g_class)
+        esquerda.addWidget(g_vinc)
+        esquerda.addStretch()
+        w_esq = QWidget()
+        w_esq.setLayout(esquerda)
+        w_esq.setMaximumWidth(430)
 
-        divisor = QSplitter()
-        divisor.setHandleWidth(10)
-        divisor.setChildrenCollapsible(False)
-        divisor.addWidget(esquerda)
-        divisor.addWidget(self.saida)
-        divisor.setStretchFactor(0, 0)
-        divisor.setStretchFactor(1, 1)
-        divisor.setSizes([440, 840])
+        self.img = VinculacaoWidget()
+        self.img.clicado.connect(self.selecionar_caso_clicado)
 
-        corpo = QWidget()
-        lay_corpo = QVBoxLayout(corpo)
-        lay_corpo.setContentsMargins(16, 14, 16, 12)
-        lay_corpo.addWidget(divisor)
-        coluna.addWidget(corpo, 1)
+        aba = QWidget()
+        lay = QHBoxLayout(aba)
+        lay.addWidget(w_esq)
+        lay.addWidget(self.img, 1)
+        return aba
 
-        self.setCentralWidget(raiz)
-        self.statusBar().showMessage("Pronto")
+    def atualizar_classificacao(self):
+        try:
+            self.info = calculo.classificar_laje(self.vao_a.value(), self.vao_b.value())
+        except ValueError as e:
+            QMessageBox.warning(self, "Dimensões inválidas", str(e))
+            return
+        i = self.info
+        self.lbl_titulo.setText(i["titulo"])
+        self.lbl_lx.setText(f"{f2(i['lx'], 3)} m")
+        self.lbl_ly.setText(f"{f2(i['ly'], 3)} m")
+        self.lbl_lam.setText(f2(i["lambda"], 3))
+        self.lbl_nota.setText(i["nota"])
 
-    def _cabecalho(self):
-        quadro = QFrame()
-        quadro.setObjectName("cabecalho")
-        lay = QVBoxLayout(quadro)
-        lay.setContentsMargins(20, 14, 20, 14)
-        lay.setSpacing(2)
-        titulo = QLabel("Cálculo de Lajes Maciças")
-        titulo.setObjectName("titulo")
-        sub = QLabel("Dimensionamento e verificações segundo a NBR 6118")
-        sub.setObjectName("subtitulo")
-        lay.addWidget(titulo)
-        lay.addWidget(sub)
-        return quadro
+        # Ao trocar as dimensões, a vinculação anterior é descartada.
+        self.cmb_vinc.blockSignals(True)
+        self.cmb_vinc.clear()
+        self.cmb_vinc.addItem("— selecione a vinculação —", None)
+        for k, txt in i["casos"].items():
+            self.cmb_vinc.addItem(f"{k} — {txt}", k)
+        self.cmb_vinc.blockSignals(False)
+        self.tabs.setTabEnabled(1, False)
+        self.tabs.setTabEnabled(2, False)
+        self.img.configurar(i["casos"], i["unidirecional"])
+        self.atualizar_estimativa()
 
-    def _barra_acoes(self):
-        st = self.style()
-        self.btn_calc = QPushButton(st.standardIcon(QStyle.SP_MediaPlay), " Calcular")
-        self.btn_calc.setObjectName("primario")
-        self.btn_calc.setToolTip("Ctrl+Enter")
-        self.btn_calc.setCursor(Qt.PointingHandCursor)
-        self.btn_calc.clicked.connect(self.calcular)
+    def vinculacao_mudou(self):
+        self.tabs.setTabEnabled(1, self.cmb_vinc.currentData() is not None)
+        self.tabs.setTabEnabled(2, False)
+        self.img.selecionar(self.cmb_vinc.currentData())
+        self.atualizar_estimativa()
 
-        self.btn_pdf = QPushButton(st.standardIcon(QStyle.SP_DialogSaveButton), " PDF")
-        self.btn_pdf.setToolTip("Exportar memória de cálculo (Ctrl+P)")
-        self.btn_pdf.clicked.connect(self.exportar_pdf)
+    def selecionar_caso_clicado(self, chave):
+        idx = self.cmb_vinc.findData(chave)
+        if idx >= 0:
+            self.cmb_vinc.setCurrentIndex(idx)
 
-        self.btn_copiar = QPushButton("Copiar")
-        self.btn_copiar.setToolTip("Copiar resultado para a área de transferência")
-        self.btn_copiar.clicked.connect(self.copiar)
+    # ---------------- aba 2 ----------------
+    def _aba_dados(self):
+        self.cmb_caa = QComboBox()
+        for txt, k in (("I — Rural", "I"), ("II — Urbana", "II"),
+                       ("III — Marinha/Industrial", "III"), ("IV — Muito agressiva", "IV")):
+            self.cmb_caa.addItem(txt, k)
+        self.cmb_caa.setCurrentIndex(1)
+        self.phi = spin(4, 25, 8.0, 1, "mm", 0.5)
+        self.q = spin(0, 50, 2.0, 2, "kN/m²", 0.5)
+        self.h = spin(1, 100, 12.0, 1, "cm", 0.5)
+        self.cmb_caa.currentIndexChanged.connect(self.atualizar_fixos)
+        self.phi.valueChanged.connect(self.atualizar_estimativa)
 
-        btn_reset = QPushButton(st.standardIcon(QStyle.SP_BrowserReload), "")
-        btn_reset.setToolTip("Restaurar valores padrão")
-        btn_reset.clicked.connect(self.restaurar)
+        g_in = QGroupBox("Dados informados")
+        f = QFormLayout(g_in)
+        f.addRow("Classe de agressividade (CAA)", self.cmb_caa)
+        f.addRow("Bitola das barras principais φ", self.phi)
+        f.addRow("Carga variável característica qk", self.q)
+        f.addRow("Espessura adotada h", self.h)
+        self.lbl_est = QLabel()
+        self.lbl_est.setWordWrap(True)
+        f.addRow(self.lbl_est)
 
-        for b in (self.btn_pdf, self.btn_copiar):
-            b.setEnabled(False)
-            b.setCursor(Qt.PointingHandCursor)
-        btn_reset.setCursor(Qt.PointingHandCursor)
+        self.lbl_fck = QLabel()
+        self.lbl_cob = QLabel()
+        g_fix = QGroupBox("Hipóteses fixas do perfil acadêmico (não editáveis)")
+        x = QFormLayout(g_fix)
+        x.addRow("Tipo de laje", QLabel("Piso não em balanço (h mínimo = 8 cm)"))
+        x.addRow("fck (mínimo da CAA)", self.lbl_fck)
+        x.addRow("Cobrimento nominal", self.lbl_cob)
+        x.addRow("Aço", QLabel("CA-50 (fyk = 500 MPa)"))
+        x.addRow("Agregado", QLabel("granito/gnaisse (αE = 1,00)"))
+        x.addRow("Peso específico do concreto", QLabel("25,00 kN/m³"))
+        x.addRow("Carga permanente adicional global", QLabel("1,28 kN/m²"))
+        x.addRow("ψ2", QLabel("0,30"))
+        x.addRow("Fluência", QLabel("t0 = 14 dias; t = 70 meses"))
 
-        linha = QHBoxLayout()
-        linha.setSpacing(8)
-        linha.addWidget(self.btn_calc, 1)
-        linha.addWidget(self.btn_pdf)
-        linha.addWidget(self.btn_copiar)
-        linha.addWidget(btn_reset)
-        return linha
+        btn = QPushButton("Calcular")
+        btn.setMinimumHeight(40)
+        btn.clicked.connect(self.calcular)
 
-    def _atalhos(self):
-        for seq in ("Ctrl+Return", "Ctrl+Enter"):
-            QShortcut(QKeySequence(seq), self, self.calcular)
-        QShortcut(QKeySequence("Ctrl+P"), self, self.exportar_pdf)
+        col = QVBoxLayout()
+        col.addWidget(g_in)
+        col.addWidget(g_fix)
+        col.addWidget(btn)
+        col.addStretch()
+        aba = QWidget()
+        aba.setLayout(col)
+        self.atualizar_fixos()
+        return aba
 
-    # ------------------------------------------------------------------
-    # estado
-    # ------------------------------------------------------------------
-    def _widgets(self):
-        return [w for w in vars(self).values()
-                if isinstance(w, (QDoubleSpinBox, QComboBox))]
+    def atualizar_fixos(self):
+        caa = self.cmb_caa.currentData()
+        self.lbl_fck.setText(f"C{calculo.FCK_MIN_CAA[caa]} ({calculo.FCK_MIN_CAA[caa]} MPa)")
+        self.lbl_cob.setText(f"{calculo.COB_NOMINAL[caa]} mm")
+        self.atualizar_estimativa()
 
-    def _salvar_padroes(self):
-        self._padroes = {
-            w: (w.currentIndex() if isinstance(w, QComboBox) else w.value())
-            for w in self._widgets()}
+    def atualizar_estimativa(self):
+        if self.info is None or not hasattr(self, "lbl_est"):
+            return
+        try:
+            vinc = self.cmb_vinc.currentData()
+            caso = 1 if self.info["unidirecional"] else (vinc or 1)
+            cob = calculo.COB_NOMINAL[self.cmb_caa.currentData()]
+            _, h_est, l_star, n = calculo.estimar_h_bastos(
+                self.info["lx"], self.info["ly"], caso, cob / 1000, self.phi.value() / 1000)
+            self.lbl_est.setText(
+                f"Estimativa (Bastos): l* = {f2(l_star, 3)} m; n = {n}; "
+                f"h ≈ {f2(h_est * 100, 1)} cm. Mínimo normativo: 8,0 cm.")
+        except (ValueError, KeyError):
+            self.lbl_est.setText("")
 
-    def restaurar(self):
-        for w, v in self._padroes.items():
-            if isinstance(w, QComboBox):
-                w.setCurrentIndex(v)
-            else:
-                w.setValue(v)
-        self._mostrar_vazio()
-        self.statusBar().showMessage("Valores padrão restaurados")
+    # ---------------- aba 3 ----------------
+    def _aba_resultados(self):
+        self.txt_parecer = texto_mono()
+        self.tab_cargas = nova_tabela(["Item", "Valor", "Unidade"])
+        self.tab_reacoes = nova_tabela(["Item", "Valor", "Unidade"])
+        self.tab_arm = nova_tabela(["Armadura", "As calculada (cm²/m)", "As adotada (cm²/m)",
+                                    "Barras/m", "Espaçamento (cm)", "As fornecida (cm²/m)",
+                                    "Espaç. livre (cm)", "Verificação geométrica"])
+        self.tab_flecha = nova_tabela(["Item", "Valor", "Unidade", "Situação"])
+        self.txt_memoria = texto_mono()
 
-    def _mostrar_vazio(self):
-        self.saida.clear()
-        self.saida.setPlaceholderText(
-            "Preencha os dados ao lado e clique em Calcular (Ctrl+Enter).\n\n"
-            "A memória de cálculo aparecerá aqui.")
-        self.btn_pdf.setEnabled(False)
-        self.btn_copiar.setEnabled(False)
+        self.res_tabs = QTabWidget()
+        self.res_tabs.addTab(self.txt_parecer, "Parecer final")
+        self.res_tabs.addTab(self.tab_cargas, "Cargas e momentos")
+        self.res_tabs.addTab(self.tab_reacoes, "Reações")
+        self.res_tabs.addTab(self.tab_arm, "Armaduras")
+        self.res_tabs.addTab(self.tab_flecha, "Flechas")
+        self.res_tabs.addTab(self.txt_memoria, "Memória completa")
 
-    # ------------------------------------------------------------------
-    # ações
-    # ------------------------------------------------------------------
-    def coletar(self):
-        return dict(
-            lx=self.lx.value(), ly=self.ly.value(),
-            tipo=self.tipo.currentData(), caso=self.caso.currentData(),
-            caa=self.caa.currentData(), cob=self.cob.value(),
-            fck=self.fck.value(), fyk=self.fyk.value(), phi=self.phi.value(),
-            agregado=self.agregado.currentData(), gc=self.gc.value(),
-            g_contrapiso=self.g_contrapiso.value(),
-            g_revest_inf=self.g_revest_inf.value(), g_piso=self.g_piso.value(),
-            g_paredes=self.g_paredes.value(), g_outros=self.g_outros.value(),
-            q=self.q.value(), psi2=self.psi2.value(), h=self.h.value(),
-            t0=self.t0.value(), tinf=self.tinf.value(),
-        )
+        btn_pdf = QPushButton("Exportar memória em PDF")
+        btn_pdf.clicked.connect(self.exportar_pdf)
+        lay = QVBoxLayout()
+        lay.addWidget(self.res_tabs)
+        lay.addWidget(btn_pdf)
+        aba = QWidget()
+        aba.setLayout(lay)
+        return aba
 
     def calcular(self):
         try:
-            d = calculo.montar_dados(self.coletar())
-            r = calculo.calcular(d)
-            buf = io.StringIO()
-            with redirect_stdout(buf):
-                calculo.imprimir(d, r)
+            dados = montar_dados_padrao(
+                self.vao_a.value(), self.vao_b.value(),
+                self.cmb_vinc.currentData(), self.cmb_caa.currentData(),
+                self.phi.value(), self.q.value(), self.h.value())
+            d, r, partes = gerar_memoria(dados)
         except (ValueError, KeyError) as e:
-            self.statusBar().showMessage(f"Erro nos dados: {e}")
             QMessageBox.warning(self, "Erro nos dados", str(e))
             return
-        self.saida.setPlainText(buf.getvalue())
-        self.btn_pdf.setEnabled(True)
-        self.btn_copiar.setEnabled(True)
-        self.statusBar().showMessage("Cálculo concluído")
-
-    def copiar(self):
-        QApplication.clipboard().setText(self.saida.toPlainText())
-        self.statusBar().showMessage("Resultado copiado", 3000)
+        self.txt_parecer.setPlainText(partes["parecer"])
+        self.txt_memoria.setPlainText(partes["completo"])
+        preencher(self.tab_cargas, linhas_cargas_momentos(d, r))
+        preencher(self.tab_reacoes, linhas_reacoes(d, r))
+        preencher(self.tab_arm, linhas_armaduras(d, r))
+        preencher(self.tab_flecha, linhas_flechas(d, r))
+        self.tabs.setTabEnabled(2, True)
+        self.tabs.setCurrentIndex(2)
+        self.res_tabs.setCurrentIndex(0)
 
     def exportar_pdf(self):
-        if not self.saida.toPlainText():
-            return
         caminho, _ = QFileDialog.getSaveFileName(
             self, "Salvar memória de cálculo", "memoria_calculo.pdf", "PDF (*.pdf)")
         if not caminho:
             return
-        impressora = QPrinter(QPrinter.HighResolution)
-        impressora.setOutputFormat(QPrinter.PdfFormat)
+        impressora = QPrinter(QPrinter.PrinterMode.HighResolution)
+        impressora.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
         impressora.setOutputFileName(caminho)
-        impressora.setPageLayout(QPageLayout(
-            QPageSize(QPageSize.A4), QPageLayout.Portrait,
-            QMarginsF(15, 15, 15, 15), QPageLayout.Millimeter))
-        self.saida.print_(impressora)
-        self.statusBar().showMessage(f"PDF salvo em {caminho}", 5000)
+        self.txt_memoria.print_(impressora)

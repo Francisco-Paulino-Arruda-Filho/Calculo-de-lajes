@@ -1,3 +1,9 @@
+# PERFIL ACADÊMICO DE ENSAIO: piso não em balanço, CA-50, agregado granito/gnaisse,
+# carregamento global adicional 1,28 kN/m² e q=1,50 kN/m².
+# NÃO USAR COMO DIMENSIONAMENTO FINAL DE OBRAS: cargas, tipo de uso, agregado,
+# idade de carregamento e materiais precisam ser definidos para cada projeto.
+# Verificações do módulo 1D (flecha/fissuração) são preliminares.
+
 """
 ================================================================================
   CÁLCULO DE LAJES MACIÇAS DE CONCRETO ARMADO
@@ -23,134 +29,8 @@ import math
 # Cada linha: [λ, µx_pos, µy_pos, µx_neg, µy_neg]
 # Zeros indicam que não há engaste naquela direção para o caso.
 
-MOMENTOS = {
-    # Caso 1 – 4 bordas simplesmente apoiadas
-    1: [
-        [1.00, 4.41, 4.41, 0,    0   ], [1.05, 4.80, 4.45, 0,    0   ],
-        [1.10, 5.18, 4.49, 0,    0   ], [1.15, 5.56, 4.49, 0,    0   ],
-        [1.20, 5.90, 4.48, 0,    0   ], [1.25, 6.27, 4.45, 0,    0   ],
-        [1.30, 6.60, 4.42, 0,    0   ], [1.35, 6.93, 4.37, 0,    0   ],
-        [1.40, 7.25, 4.33, 0,    0   ], [1.45, 7.55, 4.30, 0,    0   ],
-        [1.50, 7.86, 4.25, 0,    0   ], [1.55, 8.12, 4.20, 0,    0   ],
-        [1.60, 8.34, 4.14, 0,    0   ], [1.65, 8.62, 4.07, 0,    0   ],
-        [1.70, 8.86, 4.00, 0,    0   ], [1.75, 9.06, 3.96, 0,    0   ],
-        [1.80, 9.27, 3.91, 0,    0   ], [1.85, 9.45, 3.83, 0,    0   ],
-        [1.90, 9.63, 3.75, 0,    0   ], [1.95, 9.77, 3.71, 0,    0   ],
-        [2.00,10.00, 3.64, 0,    0   ],
-    ],
-    # Caso 2 – 2 bordas opostas engastadas (paralelas a ly)
-    2: [
-        [1.00, 3.07, 3.94, 0, 8.52], [1.05, 3.42, 3.78, 0, 8.79],
-        [1.10, 3.77, 3.90, 0, 9.18], [1.15, 4.14, 3.97, 0, 9.53],
-        [1.20, 4.51, 4.05, 0, 9.88], [1.25, 4.88, 4.10, 0, 10.16],
-        [1.30, 5.25, 4.15, 0, 10.41], [1.35, 5.60, 4.18, 0, 10.64],
-        [1.40, 5.95, 4.21, 0, 10.86], [1.45, 6.27, 4.19, 0, 11.05],
-        [1.50, 6.60, 4.18, 0, 11.23], [1.55, 6.90, 4.17, 0, 11.39],
-        [1.60, 7.21, 4.14, 0, 11.55], [1.65, 7.42, 4.12, 0, 11.67],
-        [1.70, 7.62, 4.09, 0, 11.79], [1.75, 7.66, 4.05, 0, 11.88],
-        [1.80, 7.69, 3.99, 0, 11.96], [1.85, 8.22, 3.97, 0, 12.03],
-        [1.90, 8.74, 3.94, 0, 12.14], [1.95, 8.97, 3.88, 0, 12.17],
-        [2.00, 9.18, 3.80, 0, 12.20],
-    ],
-    # Caso 3 – 1 borda engastada (paralela a lx — bordo em y)
-    3: [
-        [1.00, 3.94, 3.07, 8.52, 0], [1.05, 4.19, 2.84, 8.91, 0],
-        [1.10, 4.43, 2.76, 9.30, 0], [1.15, 4.64, 2.68, 9.63, 0],
-        [1.20, 4.85, 2.59, 9.95, 0], [1.25, 5.03, 2.51, 10.22, 0],
-        [1.30, 5.20, 2.42, 10.48, 0], [1.35, 5.36, 2.34, 10.71, 0],
-        [1.40, 5.51, 2.25, 10.92, 0], [1.45, 5.64, 2.19, 11.10, 0],
-        [1.50, 5.77, 2.12, 11.27, 0], [1.55, 5.87, 2.04, 11.42, 0],
-        [1.60, 5.98, 1.95, 11.55, 0], [1.65, 6.07, 1.87, 11.67, 0],
-        [1.70, 6.16, 1.79, 11.80, 0], [1.75, 6.24, 1.74, 11.92, 0],
-        [1.80, 6.31, 1.68, 12.04, 0], [1.85, 6.38, 1.64, 12.14, 0],
-        [1.90, 6.43, 1.59, 12.24, 0], [1.95, 6.47, 1.54, 12.29, 0],
-        [2.00, 6.51, 1.48, 12.34, 0],
-    ],
-    # Caso 4 – 2 bordas adjacentes engastadas
-    4: [
-        [1.00, 2.81, 2.81, 6.99, 6.99], [1.05, 3.05, 2.81, 7.43, 7.18],
-        [1.10, 3.30, 2.81, 7.87, 7.36], [1.15, 3.53, 2.80, 8.28, 7.50],
-        [1.20, 3.76, 2.79, 8.69, 7.63], [1.25, 3.96, 2.74, 9.03, 7.72],
-        [1.30, 4.16, 2.69, 9.37, 7.81], [1.35, 4.33, 2.65, 9.65, 7.88],
-        [1.40, 4.51, 2.60, 9.93, 7.94], [1.45, 4.66, 2.55, 10.41, 8.00],
-        [1.50, 4.81, 2.47, 10.62, 8.06], [1.55, 4.93, 2.39, 10.82, 8.09],
-        [1.60, 5.06, 2.31, 10.99, 8.12], [1.65, 5.16, 2.24, 11.16, 8.14],
-        [1.70, 5.27, 2.16, 11.30, 8.15], [1.75, 5.36, 2.11, 11.43, 8.16],
-        [1.80, 5.45, 2.04, 11.55, 8.17], [1.85, 5.53, 1.99, 11.57, 8.17],
-        [1.90, 5.60, 1.93, 11.67, 8.18], [1.95, 5.67, 1.91, 11.78, 8.19],
-        [2.00, 5.74, 1.88, 11.89, 8.20],
-    ],
-    # Caso 5 – 2 bordas opostas engastadas (paralelas a lx)
-    5: [
-        [1.00, 2.15, 3.17, 0,    6.99], [1.05, 2.47, 3.32, 0,    7.43],
-        [1.10, 2.78, 3.47, 0,    7.87], [1.15, 3.08, 3.58, 0,    8.26],
-        [1.20, 3.38, 3.70, 0,    8.65], [1.25, 3.79, 3.80, 0,    9.03],
-        [1.30, 4.15, 3.90, 0,    9.33], [1.35, 4.50, 3.96, 0,    9.69],
-        [1.40, 4.85, 4.03, 0,   10.00], [1.45, 5.19, 4.09, 0,   10.25],
-        [1.50, 5.53, 4.14, 0,   10.49], [1.55, 5.86, 4.16, 0,   10.70],
-        [1.60, 6.18, 4.17, 0,   10.91], [1.65, 6.48, 4.14, 0,   11.08],
-        [1.70, 6.81, 4.12, 0,   11.24], [1.75, 7.11, 4.12, 0,   11.39],
-        [1.80, 7.41, 4.10, 0,   11.43], [1.85, 7.68, 4.08, 0,   11.65],
-        [1.90, 7.95, 4.04, 0,   11.77], [1.95, 8.21, 3.99, 0,   11.83],
-        [2.00, 8.47, 3.92, 0,   11.88],
-    ],
-    # Caso 6 – 2 bordas opostas engastadas (paralelas a ly) — variante
-    6: [
-        [1.00, 3.17, 3.17, 6.99, 0], [1.05, 3.29, 3.32, 7.20, 0],
-        [1.10, 3.42, 3.47, 7.41, 0], [1.15, 3.52, 3.58, 7.56, 0],
-        [1.20, 3.63, 3.70, 7.70, 0], [1.25, 3.71, 3.80, 7.82, 0],
-        [1.30, 3.79, 3.90, 7.93, 0], [1.35, 3.84, 3.96, 8.02, 0],
-        [1.40, 3.90, 4.03, 8.11, 0], [1.45, 3.94, 4.09, 8.13, 0],
-        [1.50, 3.99, 4.14, 8.15, 0], [1.55, 4.03, 4.16, 8.20, 0],
-        [1.60, 4.06, 4.17, 8.25, 0], [1.65, 4.09, 4.14, 8.28, 0],
-        [1.70, 4.12, 4.12, 8.30, 0], [1.75, 4.14, 4.12, 8.31, 0],
-        [1.80, 4.15, 4.10, 8.32, 0], [1.85, 4.16, 4.08, 8.33, 0],
-        [1.90, 4.17, 4.04, 8.33, 0], [1.95, 4.17, 3.99, 8.33, 0],
-        [2.00, 4.18, 3.92, 8.33, 0],
-    ],
-    # Caso 7 – 4 bordas engastadas
-    7: [
-        [1.00, 2.13, 5.46, 2.60, 6.17], [1.05, 2.38, 5.98, 2.66, 6.46],
-        [1.10, 2.57, 6.46, 2.77, 6.75], [1.15, 2.76, 6.92, 2.85, 7.01],
-        [1.20, 2.93, 7.33, 2.93, 7.24], [1.25, 3.09, 7.71, 3.00, 7.45],
-        [1.30, 3.22, 8.06, 3.06, 7.64], [1.35, 3.35, 8.36, 3.11, 7.80],
-        [1.40, 3.46, 8.63, 3.16, 7.94], [1.45, 3.56, 8.87, 3.19, 8.05],
-        [1.50, 3.65, 9.08, 3.22, 8.15], [1.55, 3.74, 9.24, 3.23, 8.22],
-        [1.60, 3.81, 9.38, 3.24, 8.28], [1.65, 3.87, 9.49, 3.25, 8.33],
-        [1.70, 3.92, 9.59, 3.25, 8.37], [1.75, 3.97, 9.68, 3.25, 8.40],
-        [1.80, 4.01, 9.76, 3.26, 8.43], [1.85, 4.04, 9.82, 3.26, 8.45],
-        [1.90, 4.08, 9.87, 3.26, 8.46], [1.95, 4.11, 9.90, 3.26, 8.47],
-        [2.00, 4.13, 9.93, 3.26, 8.48],
-    ],
-    # Caso 8 – 3 bordas engastadas + 1 borda livre (paralela a ly)
-    8: [
-        [1.00, 2.60, 6.17, 2.13, 5.46], [1.05, 2.78, 6.47, 2.09, 5.56],
-        [1.10, 2.96, 6.78, 2.06, 5.66], [1.15, 3.12, 7.07, 2.03, 5.75],
-        [1.20, 3.28, 7.34, 2.00, 5.83], [1.25, 3.42, 7.58, 1.97, 5.90],
-        [1.30, 3.55, 7.81, 1.93, 5.95], [1.35, 3.66, 8.01, 1.89, 6.00],
-        [1.40, 3.77, 8.19, 1.86, 6.05], [1.45, 3.86, 8.36, 1.82, 6.08],
-        [1.50, 3.95, 8.51, 1.78, 6.11], [1.55, 4.03, 8.64, 1.75, 6.14],
-        [1.60, 4.10, 8.76, 1.71, 6.16], [1.65, 4.17, 8.86, 1.67, 6.17],
-        [1.70, 4.23, 8.96, 1.64, 6.18], [1.75, 4.28, 9.04, 1.61, 6.19],
-        [1.80, 4.33, 9.12, 1.58, 6.20], [1.85, 4.37, 9.18, 1.54, 6.20],
-        [1.90, 4.41, 9.24, 1.51, 6.21], [1.95, 4.45, 9.30, 1.48, 6.21],
-        [2.00, 4.48, 9.35, 1.44, 6.22],
-    ],
-    # Caso 9 – 3 bordas engastadas + 1 borda livre (paralela a lx)
-    9: [
-        [1.00, 2.11, 5.15, 2.11, 5.15], [1.05, 2.31, 5.50, 2.09, 5.56],
-        [1.10, 2.53, 5.88, 2.06, 5.66], [1.15, 2.73, 6.25, 2.03, 5.75],
-        [1.20, 2.93, 6.61, 2.00, 5.83], [1.25, 3.12, 6.95, 1.97, 5.90],
-        [1.30, 3.30, 7.27, 1.93, 5.95], [1.35, 3.46, 7.56, 1.89, 6.00],
-        [1.40, 3.62, 7.83, 1.86, 6.05], [1.45, 3.76, 8.08, 1.82, 6.08],
-        [1.50, 3.89, 8.31, 1.78, 6.11], [1.55, 4.01, 8.52, 1.75, 6.14],
-        [1.60, 4.12, 8.71, 1.71, 6.16], [1.65, 4.22, 8.88, 1.67, 6.17],
-        [1.70, 4.31, 9.04, 1.64, 6.18], [1.75, 4.40, 9.18, 1.61, 6.19],
-        [1.80, 4.47, 9.31, 1.58, 6.20], [1.85, 4.54, 9.42, 1.54, 6.20],
-        [1.90, 4.61, 9.53, 1.51, 6.21], [1.95, 4.67, 9.62, 1.48, 6.21],
-        [2.00, 4.72, 9.71, 1.44, 6.22],
-    ],
-}
+MOMENTOS = {1: [[1.0, 4.41, 4.41, 0, 0], [1.05, 4.8, 4.45, 0, 0], [1.1, 5.18, 4.49, 0, 0], [1.15, 5.56, 4.49, 0, 0], [1.2, 5.9, 4.48, 0, 0], [1.25, 6.27, 4.45, 0, 0], [1.3, 6.6, 4.42, 0, 0], [1.35, 6.93, 4.37, 0, 0], [1.4, 7.25, 4.33, 0, 0], [1.45, 7.55, 4.3, 0, 0], [1.5, 7.86, 4.25, 0, 0], [1.55, 8.12, 4.2, 0, 0], [1.6, 8.34, 3.14, 0, 0], [1.65, 8.62, 4.07, 0, 0], [1.7, 8.86, 4.0, 0, 0], [1.75, 9.06, 3.96, 0, 0], [1.8, 9.27, 3.91, 0, 0], [1.85, 9.45, 3.83, 0, 0], [1.9, 9.63, 3.75, 0, 0], [1.95, 9.77, 3.71, 0, 0], [2.0, 10.0, 3.64, 0, 0]], 2: [[1.0, 3.07, 3.94, 8.52, 0], [1.05, 3.42, 3.78, 8.79, 0], [1.1, 3.77, 3.9, 9.18, 0], [1.15, 4.14, 3.97, 9.53, 0], [1.2, 4.51, 4.05, 9.88, 0], [1.25, 4.88, 4.1, 10.16, 0], [1.3, 5.25, 4.15, 10.41, 0], [1.35, 5.6, 4.18, 10.64, 0], [1.4, 5.95, 4.21, 10.86, 0], [1.45, 6.27, 4.19, 11.05, 0], [1.5, 6.6, 4.18, 11.23, 0], [1.55, 6.9, 4.17, 11.39, 0], [1.6, 7.21, 4.14, 11.55, 0], [1.65, 7.42, 4.12, 11.67, 0], [1.7, 7.62, 4.09, 11.79, 0], [1.75, 7.66, 4.05, 11.88, 0], [1.8, 7.69, 3.99, 11.96, 0], [1.85, 8.22, 3.97, 12.03, 0], [1.9, 8.74, 3.94, 12.14, 0], [1.95, 8.97, 3.88, 12.17, 0], [2.0, 9.18, 3.8, 12.2, 0]], 3: [[1.0, 3.94, 3.07, 0, 8.52], [1.05, 4.19, 2.84, 0, 8.91], [1.1, 4.43, 2.76, 0, 9.3], [1.15, 4.64, 2.68, 0, 9.63], [1.2, 4.85, 2.59, 0, 9.95], [1.25, 5.03, 2.51, 0, 10.22], [1.3, 5.2, 2.42, 0, 10.48], [1.35, 5.36, 2.34, 0, 10.71], [1.4, 5.51, 2.25, 0, 10.92], [1.45, 5.64, 2.19, 0, 11.1], [1.5, 5.77, 2.12, 0, 11.27], [1.55, 5.87, 2.04, 0, 11.42], [1.6, 5.98, 1.95, 0, 11.55], [1.65, 6.07, 1.87, 0, 11.67], [1.7, 6.16, 1.79, 0, 11.8], [1.75, 6.24, 1.74, 0, 11.92], [1.8, 6.31, 1.68, 0, 12.04], [1.85, 6.38, 1.64, 0, 12.14], [1.9, 6.43, 1.59, 0, 12.24], [1.95, 6.47, 1.54, 0, 12.29], [2.0, 6.51, 1.48, 0, 12.34]], 4: [[1.0, 2.81, 2.81, 6.99, 6.99], [1.05, 3.05, 2.81, 7.43, 7.18], [1.1, 3.3, 2.81, 7.87, 7.36], [1.15, 3.53, 2.8, 8.28, 7.5], [1.2, 3.76, 2.79, 8.69, 7.63], [1.25, 3.96, 2.74, 9.03, 7.72], [1.3, 4.16, 2.69, 9.37, 7.81], [1.35, 4.33, 2.65, 9.65, 7.88], [1.4, 4.51, 2.6, 9.93, 7.94], [1.45, 4.66, 2.55, 10.41, 8.0], [1.5, 4.81, 2.47, 10.62, 8.06], [1.55, 4.93, 2.39, 10.82, 8.09], [1.6, 5.06, 2.31, 10.99, 8.12], [1.65, 5.16, 2.24, 11.16, 8.14], [1.7, 5.27, 2.16, 11.3, 8.15], [1.75, 5.36, 2.11, 11.43, 8.16], [1.8, 5.45, 2.04, 11.55, 8.17], [1.85, 5.53, 1.99, 11.57, 8.17], [1.9, 5.6, 1.93, 11.67, 8.18], [1.95, 5.67, 1.91, 11.78, 8.19], [2.0, 5.74, 1.88, 11.89, 8.2]], 5: [[1.0, 2.15, 3.17, 6.99, 0], [1.05, 2.47, 3.32, 7.43, 0], [1.1, 2.78, 3.47, 7.87, 0], [1.15, 3.08, 3.58, 8.26, 0], [1.2, 3.38, 3.7, 8.65, 0], [1.25, 3.79, 3.8, 9.03, 0], [1.3, 4.15, 3.9, 9.33, 0], [1.35, 4.5, 3.96, 9.69, 0], [1.4, 4.85, 4.03, 10.0, 0], [1.45, 5.19, 4.09, 10.25, 0], [1.5, 5.53, 4.14, 10.49, 0], [1.55, 5.86, 4.16, 10.7, 0], [1.6, 6.18, 4.17, 10.91, 0], [1.65, 6.48, 4.14, 11.08, 0], [1.7, 6.81, 4.12, 11.24, 0], [1.75, 7.11, 4.12, 11.39, 0], [1.8, 7.41, 4.1, 11.43, 0], [1.85, 7.68, 4.08, 11.65, 0], [1.9, 7.95, 4.04, 11.77, 0], [1.95, 8.21, 3.99, 11.83, 0], [2.0, 8.47, 3.92, 11.88, 0]], 6: [[1.0, 3.17, 2.15, 0, 6.99], [1.05, 3.29, 2.07, 0, 7.2], [1.1, 3.42, 1.99, 0, 7.41], [1.15, 3.52, 1.89, 0, 7.56], [1.2, 3.63, 1.8, 0, 7.7], [1.25, 3.71, 1.74, 0, 7.82], [1.3, 3.79, 1.67, 0, 7.93], [1.35, 3.84, 1.59, 0, 8.02], [1.4, 3.9, 1.52, 0, 8.11], [1.45, 3.94, 1.45, 0, 8.13], [1.5, 3.99, 1.38, 0, 8.15], [1.55, 4.03, 1.34, 0, 8.2], [1.6, 4.06, 1.28, 0, 8.25], [1.65, 4.09, 1.23, 0, 8.28], [1.7, 4.12, 1.18, 0, 8.3], [1.75, 4.14, 1.15, 0, 8.31], [1.8, 4.15, 1.11, 0, 8.32], [1.85, 4.16, 1.08, 0, 8.33], [1.9, 4.17, 1.04, 0, 8.33], [1.95, 4.17, 1.01, 0, 8.33], [2.0, 4.18, 0.97, 0, 8.33]], 7: [[1.0, 2.13, 2.6, 5.46, 6.17], [1.05, 2.38, 2.66, 5.98, 6.46], [1.1, 2.63, 2.71, 6.5, 6.75], [1.15, 2.87, 2.75, 7.11, 6.97], [1.2, 3.11, 2.78, 7.72, 7.19], [1.25, 3.43, 2.79, 8.81, 7.36], [1.3, 3.56, 2.77, 8.59, 7.51], [1.35, 3.76, 2.74, 8.74, 7.63], [1.4, 3.96, 2.71, 8.88, 7.74], [1.45, 4.15, 2.67, 9.16, 7.83], [1.5, 4.32, 2.63, 9.44, 7.91], [1.55, 4.48, 2.6, 9.68, 7.98], [1.6, 4.63, 2.55, 9.91, 8.02], [1.65, 4.78, 2.5, 10.13, 8.03], [1.7, 4.92, 2.45, 10.34, 8.1], [1.75, 5.04, 2.39, 10.53, 8.13], [1.8, 5.17, 2.32, 10.71, 8.17], [1.85, 5.26, 2.27, 10.88, 8.16], [1.9, 5.36, 2.22, 11.04, 8.14], [1.95, 5.45, 2.14, 11.2, 8.13], [2.0, 5.55, 2.07, 11.35, 8.12]], 8: [[1.0, 2.6, 2.13, 6.17, 5.46], [1.05, 2.78, 2.09, 6.47, 5.56], [1.1, 2.95, 2.04, 6.76, 5.65], [1.15, 3.09, 1.98, 6.99, 5.7], [1.2, 3.23, 1.92, 7.22, 5.75], [1.25, 3.34, 1.85, 7.4, 5.75], [1.3, 3.46, 1.78, 7.57, 5.76], [1.35, 3.55, 1.72, 7.7, 5.75], [1.4, 3.64, 1.64, 7.82, 5.74], [1.45, 3.71, 1.59, 7.91, 5.73], [1.5, 3.78, 1.53, 8.0, 5.72], [1.55, 3.84, 1.47, 8.07, 5.69], [1.6, 3.89, 1.42, 8.14, 5.66], [1.65, 3.94, 1.37, 8.2, 5.62], [1.7, 3.98, 1.32, 8.25, 5.58], [1.75, 4.01, 1.27, 8.3, 5.56], [1.8, 4.04, 1.2, 8.34, 5.54], [1.85, 4.07, 1.17, 8.38, 5.55], [1.9, 4.1, 1.14, 8.42, 5.56], [1.95, 4.11, 1.11, 8.45, 5.6], [2.0, 4.13, 1.08, 8.47, 5.64]], 9: [[1.0, 2.11, 2.11, 5.15, 5.15], [1.05, 2.31, 2.1, 5.5, 5.29], [1.1, 2.5, 2.09, 5.85, 5.43], [1.15, 2.73, 2.06, 6.14, 5.51], [1.2, 2.94, 2.02, 6.43, 5.59], [1.25, 3.04, 1.97, 6.67, 5.64], [1.3, 3.13, 1.91, 6.9, 5.68], [1.35, 3.25, 1.86, 7.09, 5.69], [1.4, 3.38, 1.81, 7.28, 5.7], [1.45, 3.48, 1.73, 7.43, 5.71], [1.5, 3.58, 1.66, 7.57, 5.72], [1.55, 3.66, 1.6, 7.68, 5.72], [1.6, 3.73, 1.54, 7.79, 5.72], [1.65, 3.8, 1.47, 7.88, 5.72], [1.7, 3.86, 1.4, 7.97, 5.72], [1.75, 3.91, 1.36, 8.05, 5.72], [1.8, 3.95, 1.32, 8.12, 5.72], [1.85, 3.98, 1.26, 8.18, 5.72], [1.9, 4.01, 1.21, 8.24, 5.72], [1.95, 4.04, 1.19, 8.29, 5.72], [2.0, 4.07, 1.16, 8.33, 5.72]]}
+
 
 # ─── Quadros 7.8 / 7.9 — Coeficientes k para REAÇÕES ─────────────────────────
 # Fórmula: R = k × p × lx / 10   (kN/m)
@@ -182,30 +62,79 @@ REACOES = {
         [2.00,2.99,5.18],
     ],
     4: [
-        [1.00,1.83,3.17],[1.05,1.92,3.32],[1.10,2.00,3.46],[1.15,2.07,3.58],
-        [1.20,2.14,3.70],[1.25,2.20,3.80],[1.30,2.25,3.89],[1.35,2.30,3.99],
-        [1.40,2.35,4.08],[1.45,2.40,4.15],[1.50,2.44,4.23],[1.55,2.48,4.29],
-        [1.60,2.52,4.36],[1.65,2.55,4.42],[1.70,2.58,4.47],[1.75,2.61,4.52],
-        [1.80,2.63,4.57],[1.85,2.65,4.61],[1.90,2.67,4.65],[1.95,2.69,4.68],
-        [2.00,2.71,4.71],
+        [1.00,1.83,3.17,1.83,3.17],
+        [1.05,1.92,3.32,1.83,3.17],
+        [1.10,2.00,3.46,1.83,3.17],
+        [1.15,2.07,3.58,1.83,3.17],
+        [1.20,2.14,3.70,1.83,3.17],
+        [1.25,2.20,3.80,1.83,3.17],
+        [1.30,2.25,3.90,1.83,3.17],
+        [1.35,2.30,3.99,1.83,3.17],
+        [1.40,2.35,4.08,1.83,3.17],
+        [1.45,2.40,4.15,1.83,3.17],
+        [1.50,2.44,4.23,1.83,3.17],
+        [1.55,2.48,4.29,1.83,3.17],
+        [1.60,2.52,4.36,1.83,3.17],
+        [1.65,2.55,4.42,1.83,3.17],
+        [1.70,2.58,4.48,1.83,3.17],
+        [1.75,2.61,4.53,1.83,3.17],
+        [1.80,2.64,4.58,1.83,3.17],
+        [1.85,2.67,4.63,1.83,3.17],
+        [1.90,2.70,4.67,1.83,3.17],
+        [1.95,2.72,4.71,1.83,3.17],
+        [2.00,2.75,4.75,1.83,3.17],
     ],
     5: [
-        [1.00,1.44,3.56],[1.05,1.52,3.66],[1.10,1.59,3.75],[1.15,1.66,3.84],
-        [1.20,1.73,3.92],[1.25,1.80,3.99],[1.30,1.88,4.06],[1.35,1.95,4.12],
-        [1.40,2.02,4.17],[1.45,2.09,4.22],[1.50,2.17,4.25],[1.55,2.24,4.28],
-        [1.60,2.31,4.30],[1.65,2.38,4.32],[1.70,2.44,4.33],[1.75,2.50,4.34],
-        [1.80,2.56,4.35],[1.85,2.62,4.36],[1.90,2.68,4.37],[1.95,2.73,4.37],
-        [2.00,2.78,4.38],
+        [1.00,1.44,3.56],
+        [1.05,1.52,3.66],
+        [1.10,1.59,3.75],
+        [1.15,1.66,3.84],
+        [1.20,1.73,3.92],
+        [1.25,1.80,3.99],
+        [1.30,1.88,4.06],
+        [1.35,1.95,4.12],
+        [1.40,2.02,4.17],
+        [1.45,2.09,4.22],
+        [1.50,2.17,4.25],
+        [1.55,2.24,4.28],
+        [1.60,2.31,4.30],
+        [1.65,2.38,4.32],
+        [1.70,2.45,4.33],
+        [1.75,2.53,4.33],
+        [1.80,2.59,4.33],
+        [1.85,2.66,4.33],
+        [1.90,2.72,4.33],
+        [1.95,2.78,4.33],
+        [2.00,2.84,4.33],
     ],
     6: [
-        [1.00,3.56,1.44],[1.05,3.63,1.44],[1.10,3.69,1.44],[1.15,3.74,1.44],
-        [1.20,3.80,1.44],[1.25,3.85,1.44],[1.30,3.89,1.44],[1.35,3.93,1.44],
-        [1.40,3.97,1.44],[1.45,4.00,1.44],[1.50,4.04,1.44],[1.55,4.07,1.44],
-        [1.60,4.10,1.44],[1.65,4.13,1.44],[1.70,4.15,1.44],[1.75,4.16,1.44],
-        [1.80,4.17,1.44],[1.85,4.18,1.44],[1.90,4.19,1.44],[1.95,4.19,1.44],
-        [2.00,4.20,1.44],
+        [1.00,3.56,1.44],
+        [1.05,3.63,1.44],
+        [1.10,3.69,1.44],
+        [1.15,3.74,1.44],
+        [1.20,3.80,1.44],
+        [1.25,3.85,1.44],
+        [1.30,3.89,1.44],
+        [1.35,3.93,1.44],
+        [1.40,3.97,1.44],
+        [1.45,4.00,1.44],
+        [1.50,4.04,1.44],
+        [1.55,4.07,1.44],
+        [1.60,4.10,1.44],
+        [1.65,4.13,1.44],
+        [1.70,4.15,1.44],
+        [1.75,4.17,1.44],
+        [1.80,4.20,1.44],
+        [1.85,4.22,1.44],
+        [1.90,4.24,1.44],
+        [1.95,4.26,1.44],
+        [2.00,4.28,1.44],
     ],
 }
+
+
+# Quadro 7.10: reações dos casos 7 a 9.
+REACOES.update({7: [[1.0, 1.44, 2.5, 3.03], [1.05, 1.52, 2.63, 3.08], [1.1, 1.59, 2.75, 3.11], [1.15, 1.66, 2.88, 3.14], [1.2, 1.73, 3.0, 3.16], [1.25, 1.8, 3.13, 3.17], [1.3, 1.88, 3.25, 3.17], [1.35, 1.94, 3.36, 3.17], [1.4, 2.0, 3.47, 3.17], [1.45, 2.06, 3.57, 3.17], [1.5, 2.11, 3.66, 3.17], [1.55, 2.16, 3.75, 3.17], [1.6, 2.21, 3.83, 3.17], [1.65, 2.25, 3.9, 3.17], [1.7, 2.3, 3.98, 3.17], [1.75, 2.33, 4.04, 3.17], [1.8, 2.37, 4.11, 3.17], [1.85, 2.4, 4.17, 3.17], [1.9, 2.44, 4.21, 3.17], [1.95, 2.47, 4.28, 3.17], [2.0, 2.5, 4.33, 3.17]], 8: [[1.0, 3.03, 3.03, 1.44, 2.5], [1.05, 3.08, 3.12, 1.44, 2.5], [1.1, 3.11, 3.21, 1.44, 2.5], [1.15, 3.14, 3.29, 1.44, 2.5], [1.2, 3.16, 3.36, 1.44, 2.5], [1.25, 3.17, 3.42, 1.44, 2.5], [1.3, 3.17, 3.48, 1.44, 2.5], [1.35, 3.17, 3.54, 1.44, 2.5], [1.4, 3.17, 3.59, 1.44, 2.5], [1.45, 3.17, 3.64, 1.44, 2.5], [1.5, 3.17, 3.69, 1.44, 2.5], [1.55, 3.17, 3.73, 1.44, 2.5], [1.6, 3.17, 3.77, 1.44, 2.5], [1.65, 3.17, 3.81, 1.44, 2.5], [1.7, 3.17, 3.84, 1.44, 2.5], [1.75, 3.17, 3.87, 1.44, 2.5], [1.8, 3.17, 3.9, 1.44, 2.5], [1.85, 3.17, 3.93, 1.44, 2.5], [1.9, 3.17, 3.96, 1.44, 2.5], [1.95, 3.17, 3.99, 1.44, 2.5], [2.0, 3.17, 4.01, 1.44, 2.5]], 9: [[1.0, 2.5, 2.5], [1.05, 2.62, 2.5], [1.1, 2.73, 2.5], [1.15, 2.83, 2.5], [1.2, 2.92, 2.5], [1.25, 3.0, 2.5], [1.3, 3.08, 2.5], [1.35, 3.15, 2.5], [1.4, 3.21, 2.5], [1.45, 3.28, 2.5], [1.5, 3.33, 2.5], [1.55, 3.39, 2.5], [1.6, 3.44, 2.5], [1.65, 3.48, 2.5], [1.7, 3.53, 2.5], [1.75, 3.57, 2.5], [1.8, 3.61, 2.5], [1.85, 3.65, 2.5], [1.9, 3.68, 2.5], [1.95, 3.72, 2.5], [2.0, 3.75, 2.5]]})
 
 # ─── Quadro 7.2 — Coeficientes α para FLECHA ELÁSTICA ────────────────────────
 # Fórmula: f = α × p × lx⁴ / (Ecs × h³ × 100)
@@ -259,11 +188,11 @@ FCK_MIN_CAA = {"I": 20, "II": 25, "III": 30, "IV": 40}
 
 DESCRICAO = {
     1: "4 bordas simplesmente apoiadas",
-    2: "1 borda engastada paralela a lx; demais apoiadas",
-    3: "1 borda engastada paralela a ly; demais apoiadas",
+    2: "1 borda engastada paralela a ly; demais apoiadas",
+    3: "1 borda engastada paralela a lx; demais apoiadas",
     4: "2 bordas adjacentes engastadas; demais apoiadas",
-    5: "2 bordas opostas engastadas paralelas a lx; demais apoiadas",
-    6: "2 bordas opostas engastadas paralelas a ly; demais apoiadas",
+    5: "2 bordas opostas engastadas paralelas a ly; demais apoiadas",
+    6: "2 bordas opostas engastadas paralelas a lx; demais apoiadas",
     7: "3 bordas engastadas; borda apoiada paralela a ly",
     8: "3 bordas engastadas; borda apoiada paralela a lx",
     9: "4 bordas engastadas",
@@ -276,11 +205,10 @@ DESCRICAO = {
 
 # Escopo desta versão:
 # - lajes maciças retangulares armadas em DUAS direções (lambda <= 2,0);
-# - casos 1 a 6 das tabelas de Carvalho & Figueiredo, já conferidos no material-base;
+# - casos 1 a 9 das tabelas de Carvalho & Figueiredo (quadros 7.2 a 7.5 e 7.8 a 7.10);
 # - concreto C20 a C40 nesta revisão (para evitar extrapolar o bloco de tensões sem
 #   implementar integralmente os parâmetros adicionais da NBR 6118:2026 para C45-C90).
-# Casos 7 a 9 permanecem nas tabelas originais apenas para rastreabilidade, mas são
-# bloqueados nesta versão até conferência integral da transcrição.
+# Coeficientes transcritos e conferidos por amostras; validar resultados antes de uso profissional.
 
 AGREGADOS = {
     "1": ("basalto/diabásio", 1.20),
@@ -316,26 +244,35 @@ def interpolar(tabela, lam, col=None):
 _KYP_CASO2 = [4.02,4.10,4.17,4.22,4.27,4.30,4.32,4.33,4.33,4.33,4.33,4.33,4.33,4.33,4.33,4.33,4.33,4.33,4.33,4.33,4.33]
 
 def coef_reacoes(caso, lam):
+    """Coeficientes por tipo de borda, quadros 7.8 a 7.10 (Carvalho e Figueiredo Filho, 2014).
+
+    kx/kxp: reações em bordas perpendiculares ao eixo x (apoiada/engastada).
+    ky/kyp: reações em bordas perpendiculares ao eixo y (apoiada/engastada).
+    """
     vals = interpolar(REACOES[caso], lam)
     if caso == 1:
         return {"kx": vals[0], "ky": vals[1]}
     if caso == 2:
-        # tabela armazenada: kx, ky; acrescenta k'y do Quadro 7.8
+        # Duas bordas x apoiadas; uma borda y apoiada e outra engastada.
         tabela_extra = [[1.00 + 0.05*i, v] for i, v in enumerate(_KYP_CASO2)]
         return {"kx": vals[0], "ky": vals[1], "kyp": interpolar(tabela_extra, lam, col=0)}
     if caso == 3:
-        # tabela armazenada: kx, k'x; ky = 1,83
+        # Uma borda x apoiada e outra engastada; duas bordas y apoiadas.
         return {"kx": vals[0], "kxp": vals[1], "ky": 1.83}
     if caso == 4:
-        # tabela armazenada: kx, k'x; ky = 1,83 e k'y = 3,17
         return {"kx": vals[0], "kxp": vals[1], "ky": 1.83, "kyp": 3.17}
     if caso == 5:
-        # tabela armazenada: kx, k'y
-        return {"kx": vals[0], "kyp": vals[1]}
-    if caso == 6:
-        # tabela armazenada: k'x, ky
         return {"kxp": vals[0], "ky": vals[1]}
-    raise ValueError("Coeficientes completos de reação disponíveis apenas para os casos 1 a 6.")
+    if caso == 6:
+        return {"kx": vals[0], "kyp": vals[1]}
+    if caso == 7:
+        return {"kx": vals[0], "kxp": vals[1], "kyp": vals[2]}
+    if caso == 8:
+        return {"kxp": vals[1], "ky": vals[2], "kyp": vals[3]}
+    if caso == 9:
+        return {"kxp": vals[0], "kyp": vals[1]}
+    raise ValueError("Caso de vinculação inválido (1 a 9).")
+
 
 def reacoes_kNm(caso, lam, p, lx):
     k = coef_reacoes(caso, lam)
@@ -387,9 +324,429 @@ def estimar_h_bastos(lx, ly, caso, cob_m, phi_m):
 def sep(c="=", n=76): print(c*n)
 def cab(t): sep(); print(f"  {t}"); sep()
 def lin(label, val, un=""):
-    print(f"  {label:<52} {val:>10.4f}  {un}")
+    print(f"  {label:<52} {val:>10.2f}  {un}")
 def ok_nok(cond, msg_ok, msg_no):
     print(f"  {'✔' if cond else '✘'}  {msg_ok if cond else msg_no}")
+
+
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║                            ENTRADA DE DADOS                                  ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+
+# ============================================================================
+# API PARA A INTERFACE GRAFICA — NAO ALTERAR AS REGRAS DE CLASSIFICACAO
+# ============================================================================
+# A interface deve chamar classificar_laje(lado_a, lado_b) quando o usuario
+# terminar de informar as duas dimensoes. A classificacao nao depende da
+# selecao do caso de vinculacao. Os lados sao ordenados automaticamente:
+# lx = menor vao, ly = maior vao, lambda = ly/lx.
+# lambda <= 2.0: laje bidirecional -> apresentar casos 1 a 9 e imagem 2D.
+# lambda >  2.0: laje unidirecional -> apresentar casos 1 a 3 e imagem 1D.
+# ATENCAO: os tres casos 1D sao APOIADA-APOIADA, ENGASTADA-APOIADA,
+# ENGASTADA-ENGASTADA NA DIRECAO DO MENOR VAO. NAO representam 3 casos
+# numericamente equivalentes aos casos 1, 3 e 5 do modulo bidirecional.
+# Para calculo 1D: d['unidirecional']=True; d['apoio_1d']=caso_1d;
+# d['caso']=1 (marcador apenas para estimativa de espessura).
+# Para calculo 2D: d['unidirecional']=False; d['caso']=caso_2d;
+# d['apoio_1d']=None.
+# Ao trocar as dimensoes, limpar a selecao anterior de vinculacao.
+
+CASOS_UNIDIRECIONAIS = {
+    1: 'Apoiada nas duas extremidades da faixa (A-A)',
+    2: 'Engastada em uma extremidade e apoiada na outra (E-A)',
+    3: 'Engastada nas duas extremidades da faixa (E-E)',
+}
+
+
+def classificar_laje(lado_a, lado_b):
+    """Retorna informacoes prontas para a GUI; nao executa dimensionamento."""
+    a, b = float(lado_a), float(lado_b)
+    if not (math.isfinite(a) and math.isfinite(b) and a > 0 and b > 0):
+        raise ValueError('Informe dois vaos positivos e finitos, em metros.')
+    lx, ly = sorted((a, b))
+    lam = ly / lx
+    uni = lam > 2.0
+    return {
+        'lx': lx, 'ly': ly, 'lambda': lam,
+        'unidirecional': uni,
+        'modelo': 'unidirecional' if uni else 'bidirecional',
+        'titulo': 'LAJE UNIDIRECIONAL' if uni else 'LAJE BIDIRECIONAL',
+        'casos': dict(CASOS_UNIDIRECIONAIS) if uni else dict(DESCRICAO),
+        'imagem': 'vinculacoes_unidirecionais_precisas.jpeg' if uni else 'vinculacoes_bidirecionais_precisas.jpeg',
+        'nota': ('Os apoios se referem a uma faixa de 1 m na direcao do menor vao.'
+                 if uni else 'Casos 1 a 9 segundo as tabelas cadastradas.'),
+    }
+
+
+def validar_entrada_modelo(d):
+    """Protege a API e a futura interface contra parâmetros fisicamente inválidos.
+
+    Não altera o perfil de cargas fixas definido no terminal; somente rejeita
+    valores inconsistentes, inclusive quando fornecidos programaticamente.
+    """
+    campos_positivos = ('lx','ly','h','phi','fck','fyk','gc','alpha_E')
+    campos_nao_negativos = ('q','cob','g_contrapiso','g_revest_inf',
+                           'g_piso','g_paredes','g_outros','t0','tinf')
+    for nome in campos_positivos + campos_nao_negativos + ('psi2',):
+        try:
+            v = float(d[nome])
+        except (KeyError,TypeError,ValueError) as exc:
+            raise ValueError(f"Parâmetro {nome} ausente ou não numérico.") from exc
+        if not math.isfinite(v):
+            raise ValueError(f"Parâmetro {nome} deve ser finito.")
+        if nome in campos_positivos and v <= 0:
+            raise ValueError(f"Parâmetro {nome} deve ser positivo.")
+        if nome in campos_nao_negativos and v < 0:
+            raise ValueError(f"Parâmetro {nome} não pode ser negativo.")
+    if not 0 <= d['psi2'] <= 1:
+        raise ValueError('psi2 deve estar entre 0 e 1.')
+    if d['tinf'] < d['t0']:
+        raise ValueError('A idade final não pode anteceder a idade inicial de carregamento.')
+    if d.get('caa') not in COB_NOMINAL:
+        raise ValueError('Classe de agressividade ambiental inválida.')
+    if d['h'] < altura_minima(d['tipo']):
+        raise ValueError('Espessura abaixo do mínimo da categoria de laje.')
+    if d['phi']/1000 > d['h']/8:
+        raise ValueError('Bitola superior a h/8.')
+    if d['cob'] < d['phi']:
+        raise ValueError('Cobrimento nominal inferior ao diâmetro da barra.')
+    if d['h']*1000 <= 2*d['cob']+d['phi']:
+        raise ValueError('Espessura insuficiente para cobrimentos e armadura.')
+
+
+def executar_modelo(dados):
+    """Ponto unico de entrada para calculo; seleciona o modulo adequado."""
+    validar_entrada_modelo(dados)
+    info = classificar_laje(dados['lx'], dados['ly'])
+    d = dict(dados)
+    d['lx'], d['ly'] = info['lx'], info['ly']
+    d['unidirecional'] = info['unidirecional']
+    if info['unidirecional']:
+        apoio = d.get('apoio_1d')
+        if apoio not in CASOS_UNIDIRECIONAIS:
+            raise ValueError('Escolha um dos 3 apoios unidirecionais.')
+        d['caso'] = 1
+        return d, auditar_limites_normativos(d, avaliar_detalhamento(d, anexar_verificacoes_complementares(d, calcular_unidirecional(d))))
+    caso = d.get('caso')
+    if caso not in DESCRICAO:
+        raise ValueError('Escolha um dos 9 casos bidirecionais.')
+    d['apoio_1d'] = None
+    return d, auditar_limites_normativos(d, avaliar_detalhamento(d, anexar_verificacoes_complementares(d, calcular(d))))
+
+
+def selecionar_barras(As_cm2_m, phi_mm, h_m, cob_mm, agregado_max_mm=19.0, s_max_cm=None):
+    """Escolha de barras por metro com controle de espaçamento e alerta.
+
+    Para faixas de laje, o espaçamento livre é avaliado como s-phi.
+    Critério geométrico conservador adotado: >= max(20 mm, phi, 1.2*dmax).
+    A norma e as condições de execução devem ser conferidas para projeto real.
+    """
+    if As_cm2_m <= 0:
+        return {'n':0,'s_cm':0.,'As_fornecida':0.,'status':'NÃO APLICÁVEL','avisos':[]}
+    if not all(math.isfinite(float(v)) for v in (As_cm2_m,phi_mm,h_m,cob_mm)):
+        raise ValueError('Dados não finitos no detalhamento.')
+    if phi_mm <= 0 or h_m <= 0 or cob_mm < 0:
+        raise ValueError('Geometria inválida para detalhamento.')
+    Ab = math.pi*(phi_mm/10)**2/4  # cm²/barra
+    smax = min(20.,2*h_m*100) if s_max_cm is None else float(s_max_cm)
+    if smax <= 0: raise ValueError('Espaçamento máximo inválido.')
+    n = max(math.ceil(As_cm2_m/Ab - 1e-10), math.ceil(100/smax))
+    s = 100/n
+    livre_mm = s*10 - phi_mm
+    livre_min_mm = max(20., phi_mm, 1.2*agregado_max_mm)
+    avisos=[]
+    if livre_mm < livre_min_mm - 1e-9:
+        alternativas=[]
+        for diam in (6.3,8.,10.,12.5,16.,20.,25.):
+            if diam <= phi_mm or diam > 1000*h_m/8 or diam > cob_mm: continue
+            ab_alt=math.pi*(diam/10)**2/4
+            n_alt=max(math.ceil(As_cm2_m/ab_alt-1e-10),math.ceil(100/smax))
+            livre_alt=1000/n_alt-diam
+            if livre_alt >= max(20.,diam,1.2*agregado_max_mm):
+                alternativas.append(f'barra de diâmetro {diam/10:.2f} cm a cada {100/n_alt:.2f} cm')
+        sugestao=(' Alternativas geométricas preliminares: '+', '.join(alternativas[:3])+'.') if alternativas else ' Sem alternativa de uma camada entre as bitolas ensaiadas: rever espessura, cargas ou solução estrutural.'
+        avisos.append(f'Espaçamento livre {livre_mm/10:.2f} cm inferior ao mínimo geométrico adotado {livre_min_mm/10:.2f} cm.'+sugestao)
+    if n > 100:
+        avisos.append(f'Quantidade excessiva ({n} barras/m). NÃO aceitar automaticamente: rever geometria, cargas e bitola.')
+    if phi_mm > 1000*h_m/8:
+        avisos.append('Diâmetro da barra excede um oitavo da espessura da laje.')
+    if cob_mm < phi_mm:
+        avisos.append('Cobrimento menor que diâmetro da barra.')
+    return {'n':n,'s_cm':s,'As_fornecida':n*Ab,'livre_mm':livre_mm,
+            'livre_min_mm':livre_min_mm,'status':'NÃO ATENDE' if avisos else 'ATENDE (triagem geométrica)',
+            'avisos':avisos}
+
+
+def avaliar_detalhamento(d, r):
+    """Atribui triagem geométrica às armaduras já dimensionadas, sem esconder falhas."""
+    if d['unidirecional']:
+        itens=[('principal_positiva',r['Aspos']),('principal_negativa',r['Asneg']),('distribuicao',r['Asdist'])]
+    else:
+        itens=[('x_positiva',r['As_xp']),('y_positiva',r['As_yp']),('x_negativa',r['As_xn']),('y_negativa',r['As_yn'])]
+    r['detalhamento']={k:selecionar_barras(a,d['phi'],d['h'],d['cob']) for k,a in itens}
+    r['detalhamento_ok']=all(v['status'] != 'NÃO ATENDE' for v in r['detalhamento'].values())
+    r['detalhamento_alertas']=[f'{k}: {msg}' for k,v in r['detalhamento'].items() for msg in v['avisos']]
+    return r
+
+
+def imprimir_detalhamento(r):
+    """Memória didática de acomodação das barras, com comprimentos em cm."""
+    cab('VERIFICAÇÃO GEOMÉTRICA DO ESPAÇAMENTO DAS ARMADURAS')
+    titulos = {
+        'principal_positiva': 'Armadura principal — região de momento positivo',
+        'principal_negativa': 'Armadura principal — região de momento negativo',
+        'distribuicao': 'Armadura de distribuição',
+        'x_positiva': 'Direção X — armadura positiva',
+        'y_positiva': 'Direção Y — armadura positiva',
+        'x_negativa': 'Direção X — armadura negativa',
+        'y_negativa': 'Direção Y — armadura negativa',
+    }
+    grupos = [('ARMADURAS PRINCIPAIS E DE DISTRIBUIÇÃO', list(r['detalhamento']))] if 'distribuicao' in r['detalhamento'] else [
+        ('ARMADURAS POSITIVAS', [k for k in r['detalhamento'] if 'positiva' in k]),
+        ('ARMADURAS NEGATIVAS', [k for k in r['detalhamento'] if 'negativa' in k]),
+    ]
+    for titulo, chaves in grupos:
+        print('\n' + titulo)
+        print('-' * 70)
+        for chave in chaves:
+            v = r['detalhamento'][chave]
+            print(f"\n  {titulos.get(chave, chave.replace('_', ' ').capitalize())}")
+            print(f"    Quantidade por metro de faixa : {v['n']} barras/m")
+            print(f"    Espaçamento entre eixos       : {v['s_cm']:.2f} cm")
+            print(f"    Área de aço fornecida         : {v['As_fornecida']:.2f} cm²/m")
+            if v['n']:
+                print(f"    Espaçamento livre calculado   : {v['livre_mm']/10:.2f} cm")
+                print(f"    Espaçamento livre mínimo      : {v['livre_min_mm']/10:.2f} cm")
+            print(f"    Verificação geométrica        : {'ATENDE' if not v['avisos'] else 'NÃO ATENDE'}")
+            for aviso in v['avisos']:
+                print('    ATENÇÃO:', aviso)
+    print('\n' + '-' * 70)
+    print('RESULTADO GERAL DA ACOMODAÇÃO')
+    print('  ' + ('ATENDE aos critérios geométricos preliminares adotados.'
+                  if r.get('detalhamento_ok') else
+                  'NÃO ATENDE: revisar as armaduras indicadas nos alertas.'))
+    print('\nOBSERVAÇÕES')
+    print('  - A quantidade é expressa por metro de largura da laje, não no painel inteiro.')
+    print('  - O espaçamento livre corresponde ao espaço entre faces de barras vizinhas.')
+    sep()
+
+
+def calcular_unidirecional(d):
+    """Faixa de 1 m, carga uniformemente distribuída, teoria elástica linear.
+
+    Condições: A-A, E-A e E-E. Não representa balanços, torção de canto
+    ou cargas concentradas.
+    """
+    L, h = d["lx"], d["h"]
+    fck, fyk = d["fck"], d["fyk"]
+    c, phi = d["cob"]/1000, d["phi"]/1000
+    du = h - c - phi/2
+    if du <= 0:
+        raise ValueError("Altura útil não positiva.")
+    g = d["gc"]*h + sum(d[k] for k in (
+        "g_contrapiso", "g_revest_inf", "g_piso", "g_paredes", "g_outros"))
+    q = d["q"]
+    pd = 1.4*(g+q)
+    pqp = g + d["psi2"]*q
+    # Equilíbrio e análise elástica de uma viga prismática sob carga uniforme.
+    # Para E-A: M_eng = -pL²/8, M_pos,max = 9pL²/128,
+    # R_eng = 5pL/8, R_ap = 3pL/8.
+    # Para E-E: M_eng = -pL²/12, M_pos,meio = pL²/24.
+    apoio = d["apoio_1d"]
+    if apoio == 1:
+        Mpos, Mneg, Ra, Rb, kflecha = pd*L*L/8, 0., pd*L/2, pd*L/2, 5/384
+    elif apoio == 2:
+        Mpos, Mneg, Ra, Rb, kflecha = 9*pd*L*L/128, pd*L*L/8, 5*pd*L/8, 3*pd*L/8, 0.00542
+    else:
+        Mpos, Mneg, Ra, Rb, kflecha = pd*L*L/24, pd*L*L/12, pd*L/2, pd*L/2, 1/384
+    fcd = fck/1.4*1000  # kN/m²
+    fyd = fyk/1.15*1000
+    sig = 0.85*fcd
+    def flexao(M):
+        if M <= 0: return 0., 0.
+        # M = 0.85 fcd b (0.8x) (d - 0.4x)
+        A = sig*0.8
+        discr = (A*du)**2 - 2*A*0.8*M
+        if discr <= 0: raise ValueError("Seção insuficiente à flexão: aumente h.")
+        x = (A*du-math.sqrt(discr))/(A*0.8)
+        if x/du > 0.45: raise ValueError("Limite de ductilidade x/d ultrapassado.")
+        z = du - 0.4*x
+        return M/(fyd*z)*1e4, x/du
+    Aspos_calc, xip = flexao(Mpos)
+    Asneg_calc, xin = flexao(Mneg)
+    Asbase = rho_min(fck)/100*100*(h*100)
+    # Adota-se mínimo integral conservador na direção principal;
+    # armadura transversal de distribuição: critério preliminar conservador.
+    Aspos = max(Aspos_calc, Asbase)
+    Asneg = max(Asneg_calc, Asbase) if Mneg > 0 else 0.
+    Asdist = max(0.20*Aspos, 0.90, 0.50*Asbase)  # NBR 6118:2026, Tabela 19.1: armadura secundária
+    Ab = math.pi*d["phi"]**2/400  # cm²/barra
+    def detalhar(As):
+        if As <= 0: return (0, 0., 0.)
+        smax = min(20., 2*h*100)
+        n = max(math.ceil(As/Ab), math.ceil(100/smax))
+        return n, 100/n, n*Ab
+    barras = {nome: detalhar(As) for nome, As in (
+        ("principal_positiva",Aspos), ("principal_negativa",Asneg),
+        ("distribuicao",Asdist))}
+    # ELS: rigidez equivalente da seção fissurada (modelo simplificado de Branson).
+    # Emprega momento CARACTERÍSTICO (combinação rara) para verificar fissuração,
+    # e combinação quase permanente para flecha de longa duração.
+    _, Ecs_MPa, _ = modulos_concreto(fck, d["alpha_E"])
+    Ecs = Ecs_MPa*1000.0  # kN/m²
+    Es_MPa = 210000.0
+    Ic = h**3/12.0  # faixa de largura b=1 m
+    fctm = fctm_nbr(fck)
+    Mr = 1.5*(fctm*1000.0)*Ic/(h/2.0)  # kN.m/m
+    pk = g+q
+    if apoio == 1:
+        Ma = pk*L**2/8.0
+    elif apoio == 2:
+        Ma = max(pk*L**2/8.0, 9*pk*L**2/128.0)
+    else:
+        Ma = pk*L**2/12.0
+    As_serv = barras["principal_positiva"][2]/1e4  # m²/m
+    alpha_e = Es_MPa/Ecs_MPa
+    if Ma <= Mr or As_serv <= 0:
+        estadio, III, Ieq = "I (não fissurado)", Ic, Ic
+    else:
+        # Linha neutra de seção retangular fissurada, sem armadura comprimida.
+        B = alpha_e*As_serv
+        xII = -B + math.sqrt(B**2 + 2*B*du)
+        III = xII**3/3 + alpha_e*As_serv*(du-xII)**2
+        rel = min(Mr/Ma, 1.0)
+        Ieq = min(Ic, rel**3*Ic + (1-rel**3)*III)
+        estadio = "II / rigidez equivalente"
+    rigidez_ratio = Ic/Ieq
+    flecha_elastica = kflecha*pqp*L**4/(Ecs*Ic)
+    flecha_imediata = flecha_elastica*rigidez_ratio
+    flecha_q = kflecha*q*L**4/(Ecs*Ieq)
+    xi_t0, xi_t = xi(d["t0"]), xi(d["tinf"])
+    # Sem armadura comprimida: rho' = 0. Hipótese aproximada de fluência.
+    alpha_f = max(0.0, xi_t-xi_t0)
+    flecha_diferida = alpha_f*flecha_imediata
+    flecha_final = flecha_imediata+flecha_diferida
+    limite_250, limite_350 = L/250, L/350
+    fctd = 0.7*fctm_nbr(fck)/1.4
+    Asf = barras["principal_positiva"][2]/1e4
+    rho = min(Asf/du,0.02)
+    VRd = 0.25*fctd*1000*(1.2+40*rho)*du
+    Vsd = max(Ra,Rb)-pd*du
+    return dict(modelo="unidirecional", lam=d["ly"]/L, g=g, q=q, pd=pd,
+        pqp=pqp, Mpos=Mpos, Mneg=Mneg, Ra=Ra, Rb=Rb,
+        Aspos_calc=Aspos_calc, Asneg_calc=Asneg_calc,
+        Aspos=Aspos, Asneg=Asneg, Asdist=Asdist, barras=barras,
+        xip=xip, xin=xin, du=du, f_el=flecha_elastica,
+        f_imediata=flecha_imediata, f_diferida=flecha_diferida,
+        f_total=flecha_final, f_q=flecha_q,
+        limite=limite_250, lim_250=limite_250, lim_350=limite_350,
+        els_total_ok=flecha_final<=limite_250,
+        els_q_ok=flecha_q<=limite_350,
+        Mr=Mr, Ma=Ma, Ic=Ic, III=III, Ieq=Ieq, estadio=estadio,
+        alpha_f=alpha_f, xi_t0=xi_t0, xi_t=xi_t,
+        Vsd=Vsd, VRd=VRd, cis_ok=Vsd<=VRd)
+
+
+def imprimir_unidirecional(d, r):
+    """Relatório de apresentação; não altera nenhuma fórmula de cálculo."""
+    apoio = {1: "Duas extremidades apoiadas", 2: "Uma engastada e outra apoiada",
+             3: "Duas extremidades engastadas"}[d["apoio_1d"]]
+    cab("MEMÓRIA DE CÁLCULO | LAJE MACIÇA UNIDIRECIONAL")
+    print("  Método: faixa de 1,00 m, análise elástica linear")
+    print(f"  Vinculação: {apoio}")
+
+    cab("1. IDENTIFICAÇÃO, GEOMETRIA E VINCULAÇÃO")
+    lin("Vão principal lx", d["lx"], "m")
+    lin("Vão transversal ly", d["ly"], "m")
+    lin("Relação λ = ly/lx", r["lam"])
+    lin("Espessura adotada h", d["h"]*100, "cm")
+    lin("Espessura mínima do perfil", d["h_min"]*100, "cm")
+    lin("Cobrimento nominal", d["cob"], "mm")
+    lin("Bitola selecionada", d["phi"], "mm")
+    lin("Altura útil principal", r["du"]*100, "cm")
+
+    cab("2. MATERIAIS E RESISTÊNCIAS DE CÁLCULO")
+    print(f"  Classe ambiental: {d['caa']} | Agregado: {d['agregado']}")
+    lin("fck do concreto", d["fck"], "MPa")
+    lin("fcd = fck/1,40", d["fck"]/1.4, "MPa")
+    lin("fyk do aço CA-50", d["fyk"], "MPa")
+    lin("fyd = fyk/1,15", d["fyk"]/1.15, "MPa")
+
+    cab("3. AÇÕES E COMBINAÇÕES")
+    lin("Peso próprio", d["gc"]*d["h"], "kN/m²")
+    lin("Demais cargas permanentes", r["g"]-d["gc"]*d["h"], "kN/m²")
+    lin("Carga permanente total gk", r["g"], "kN/m²")
+    lin("Carga variável qk", r["q"], "kN/m²")
+    lin("ELU: pd = 1,4 (gk + qk)", r["pd"], "kN/m²")
+    lin("ELS: pqp = gk + ψ₂ qk", r["pqp"], "kN/m²")
+
+    cab("4. ANÁLISE ESTRUTURAL | ESFORÇOS")
+    lin("Momento positivo de cálculo", r["Mpos"], "kN.m/m")
+    lin("Momento negativo de cálculo (módulo)", r["Mneg"], "kN.m/m")
+    lin("Reação no apoio A", r["Ra"], "kN/m")
+    lin("Reação no apoio B", r["Rb"], "kN/m")
+
+    cab("5. DIMENSIONAMENTO E DETALHAMENTO DAS ARMADURAS")
+    lin("Taxa mínima ρₘᵢₙ", rho_min(d["fck"]), "%")
+    lin("Relação ξ = x/d | momento positivo", r["xip"])
+    if r["Mneg"] > 0:
+        lin("Relação ξ = x/d | momento negativo", r["xin"])
+    itens = (
+        ("5.1 ARMADURA PRINCIPAL POSITIVA", "principal_positiva", "Aspos_calc", "Aspos"),
+        ("5.2 ARMADURA PRINCIPAL NEGATIVA", "principal_negativa", "Asneg_calc", "Asneg"),
+        ("5.3 ARMADURA TRANSVERSAL DE DISTRIBUIÇÃO", "distribuicao", None, "Asdist"),
+    )
+    for titulo, chave, calculada, requerida in itens:
+        print(f"\n  {titulo}")
+        if calculada:
+            lin("Área calculada", r[calculada], "cm²/m")
+        lin("Área adotada", r[requerida], "cm²/m")
+        n, espacamento, fornecida = r["barras"][chave]
+        if n:
+            lin("Área fornecida", fornecida, "cm²/m")
+            lin("Quantidade de barras por metro", n, "barras/m")
+            lin("Espaçamento", espacamento, "cm")
+            print(f"  Detalhamento: φ {d['phi']:g} mm a cada {espacamento:.2f} cm")
+        else:
+            print("  Sem armadura adicional solicitada neste modelo")
+
+    cab("6. VERIFICAÇÃO SIMPLIFICADA DE CISALHAMENTO")
+    lin("Solicitação cortante Vsd", r["Vsd"], "kN/m")
+    lin("Resistência estimada VRd", r["VRd"], "kN/m")
+    ok_nok(r["cis_ok"], "Verificação simplificada: atende", "Verificação simplificada: NÃO atende")
+
+    cab("7. ESTADO LIMITE DE SERVIÇO | FLECHAS")
+    lin("Momento de fissuração Mᵣ", r["Mr"], "kN.m/m")
+    lin("Momento máximo característico Mₐ", r["Ma"], "kN.m/m")
+    print(f"  Estádio da seção: {r['estadio']}")
+    lin("Inércia bruta I꜀", r["Ic"], "m⁴/m")
+    lin("Inércia equivalente Iₑq", r["Ieq"], "m⁴/m")
+    lin("Flecha elástica bruta (referência)", r["f_el"]*100, "cm")
+    lin("Flecha imediata (rigidez equivalente)", r["f_imediata"]*100, "cm")
+    lin("Coeficiente diferido α𝒇", r["alpha_f"])
+    lin("Flecha diferida estimada", r["f_diferida"]*100, "cm")
+    lin("Flecha final estimada", r["f_total"]*100, "cm")
+    lin("Limite geométrico lₓ/250", r["lim_250"]*100, "cm")
+    ok_nok(r["els_total_ok"], "Flecha final atende l/250", "Flecha final NÃO atende l/250")
+    lin("Flecha da parcela variável", r["f_q"]*100, "cm")
+    lin("Referência lₓ/350", r["lim_350"]*100, "cm")
+    ok_nok(r["els_q_ok"], "Parcela variável atende l/350", "Parcela variável NÃO atende l/350")
+    print("  AVISO: ELS estimado por rigidez equivalente; não constitui análise completa")
+    print("  de fissuração, efeitos de cargas sucessivas ou condições específicas de uso.")
+
+    cab("8. QUADRO-RESUMO")
+    print(f"  Modelo unidirecional | lx={d['lx']:.2f} m | ly={d['ly']:.2f} m | h={d['h']*100:.2f} cm")
+    for nome, chave in (("Principal positiva", "principal_positiva"),
+                        ("Principal negativa", "principal_negativa"),
+                        ("Distribuição", "distribuicao")):
+        n, esp, af = r["barras"][chave]
+        print(f"  {nome:<25} {af:>8.3f} cm²/m | φ {d['phi']:g} c/{esp:.2f} cm" if n else f"  {nome}: não aplicável")
+    print(f"  Flecha imediata={r['f_imediata']*100:.2f} cm | diferida={r['f_diferida']*100:.2f} cm")
+    print(f"  Flecha final={r['f_total']*100:.2f} cm | limite l/250={r['lim_250']*100:.2f} cm")
+    print("  LIMITAÇÕES: ancoragem e abertura de fissuras não são calculadas;")
+    print("  avaliação completa de ELS; flechas estimadas pelo modelo simplificado.")
+    print("  Uso acadêmico: conferir os resultados antes de qualquer aplicação estrutural.")
+    sep()
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
@@ -615,70 +972,70 @@ def calcular(d):
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
 def imprimir(d, r):
-    phi_s = f"phi{d['phi']:.0f}mm"
-    sep(); print("       M E M Ó R I A   D E   C Á L C U L O")
-    print("       Laje Maciça de Concreto Armado — revisão NBR 6118:2026"); sep()
+    phi_s = f"φ {d['phi']:.2f} mm"
+    cab("MEMÓRIA DE CÁLCULO | LAJE MACIÇA BIDIRECIONAL")
+    print("  Análise por coeficientes tabelados | Carvalho & Figueiredo Filho")
 
     cab("1. DADOS DE ENTRADA E ESCOPO")
-    lin("lx", d["lx"], "m"); lin("ly", d["ly"], "m"); lin("lambda=ly/lx", r["lam"])
-    print(f"  Classificação: laje armada em duas direções (lambda <= 2,0)")
+    lin("lx", d["lx"], "m"); lin("ly", d["ly"], "m"); lin("λ=ly/lx", r["lam"])
+    print(f"  Classificação: laje armada em duas direções (λ ≤ 2,0)")
     print(f"  Caso {d['caso']}: {DESCRICAO[d['caso']]}")
     lin("h adotado", d["h"]*100, "cm"); lin("h mínimo", d["h_min"]*100, "cm")
     lin("h estimado (Bastos)", d["h_est"]*100, "cm")
     lin("cobrimento adotado", d["cob"], "mm"); lin("cobrimento Tabela 7.2", d["cob_nbr"], "mm")
-    lin("fck", d["fck"], "MPa"); lin("fyk", d["fyk"], "MPa")
-    print(f"  Agregado: {d['agregado']} (alpha_E={d['alpha_E']})")
+    lin("fck (resistência característica)", d["fck"], "MPa"); lin("fyk (resistência característica)", d["fyk"], "MPa")
+    print(f"  Agregado: {d['agregado']} (α_E={d['alpha_E']})")
 
     cab("2. PROPRIEDADES DOS MATERIAIS")
-    lin("fcd=fck/1,4", r["fcd"], "MPa"); lin("fyd=fyk/1,15", r["fyd"], "MPa")
+    lin("fcd = fck/1,40", r["fcd"], "MPa"); lin("fyd = fyk/1,15", r["fyd"], "MPa")
     lin("fctm", r["fctm"], "MPa"); lin("fctk,inf=0,7 fctm", r["fctk_inf"], "MPa")
-    lin("Eci", r["Eci_MPa"], "MPa"); lin("alpha_i", r["alpha_i"])
-    lin("Ecs=alpha_i Eci", r["Ecs_MPa"], "MPa")
+    lin("Eci", r["Eci_MPa"], "MPa"); lin("αᵢ", r["alpha_i"])
+    lin("Ecs = αᵢ · Eci", r["Ecs_MPa"], "MPa")
 
     cab("3. ALTURAS ÚTEIS")
-    lin("d_x positivo (camada inferior)", r["d_xp"]*100, "cm")
-    lin("d_y positivo (2ª camada)", r["d_yp"]*100, "cm")
-    lin("d_x negativo", r["d_xn"]*100, "cm"); lin("d_y negativo", r["d_yn"]*100, "cm")
-    lin("phi máximo=h/8", d["h"]*1000/8, "mm")
+    lin("dₓ positivo (camada inferior)", r["d_xp"]*100, "cm")
+    lin("dᵧ positivo (2ª camada)", r["d_yp"]*100, "cm")
+    lin("dₓ negativo", r["d_xn"]*100, "cm"); lin("dᵧ negativo", r["d_yn"]*100, "cm")
+    lin("φ máximo=h/8", d["h"]*1000/8, "mm")
 
     cab("4. CARGAS E COMBINAÇÕES")
     lin("g1 peso próprio", r["g1"], "kN/m²"); lin("g2 demais permanentes", r["g2"], "kN/m²")
     lin("g total", r["g"], "kN/m²"); lin("q", d["q"], "kN/m²")
     lin("ELU normal 1,4(g+q)", r["p_elu"], "kN/m²")
     lin("ELS rara g+q", r["p_rare"], "kN/m²")
-    lin("ELS quase permanente g+psi2 q", r["p_qp"], "kN/m²")
+    lin("ELS quase permanente g+ψ₂ q", r["p_qp"], "kN/m²")
 
     cab("5. COEFICIENTES E MOMENTOS")
-    lin("mu_x+", r["mu_xp"]); lin("mu_y+", r["mu_yp"])
-    if r["mu_xn"]: lin("mu_x-", r["mu_xn"])
-    if r["mu_yn"]: lin("mu_y-", r["mu_yn"])
-    lin("alpha de flecha", r["alpha"])
+    lin("μₓ⁺", r["mu_xp"]); lin("μᵧ⁺", r["mu_yp"])
+    if r["mu_xn"]: lin("μₓ⁻", r["mu_xn"])
+    if r["mu_yn"]: lin("μᵧ⁻", r["mu_yn"])
+    lin("α (coeficiente de flecha)", r["alpha"])
     lin("Mx+ ELU", r["Mx_pos"], "kNm/m"); lin("My+ ELU", r["My_pos"], "kNm/m")
     if r["Mx_neg"]: lin("Mx- ELU", r["Mx_neg"], "kNm/m")
     if r["My_neg"]: lin("My- ELU", r["My_neg"], "kNm/m")
 
-    cab("6. REAÇÕES NAS VIGAS")
+    cab("6. REAÇÕES DE APOIO")
     if r["Rx_ap"] is not None: lin("Rx em borda apoiada", r["Rx_ap"], "kN/m")
     if r["Rx_eng"] is not None: lin("Rx' em borda engastada", r["Rx_eng"], "kN/m")
     if r["Ry_ap"] is not None: lin("Ry em borda apoiada", r["Ry_ap"], "kN/m")
     if r["Ry_eng"] is not None: lin("Ry' em borda engastada", r["Ry_eng"], "kN/m")
     lin("Rx crítico", r["Rx"], "kN/m"); lin("Ry crítico", r["Ry"], "kN/m")
 
-    cab("7. ARMADURAS")
-    lin("rho_min", r["rho_m"], "%")
-    lin("As_min base=rho_min*b*h", r["As_min"], "cm²/m")
-    lin("As_min positiva 2 dir=0,67 As_min", r["As_min_2dir"], "cm²/m")
-    lin("s_max=min(2h;20cm)", r["s_max"], "cm")
-    lin("limite de dutilidade x/d", r["xi_lim"])
-    if r["Mx_pos"] > 0: lin("x/d X+", r["xid_xp"])
-    if r["My_pos"] > 0: lin("x/d Y+", r["xid_yp"])
-    if r["Mx_neg"] > 0: lin("x/d X-", r["xid_xn"])
-    if r["My_neg"] > 0: lin("x/d Y-", r["xid_yn"])
+    cab("7. DIMENSIONAMENTO E DETALHAMENTO DAS ARMADURAS")
+    lin("ρₘᵢₙ", r["rho_m"], "%")
+    lin("Aₛ,min base=ρₘᵢₙ*b*h", r["As_min"], "cm²/m")
+    lin("Aₛ,min positiva 2 dir=0,67 Aₛ,min", r["As_min_2dir"], "cm²/m")
+    lin("sₘₐₓ=min(2h;20cm)", r["s_max"], "cm")
+    lin("limite de dutilidade ξ = x/d", r["xi_lim"])
+    if r["Mx_pos"] > 0: lin("ξ = x/d X+", r["xid_xp"])
+    if r["My_pos"] > 0: lin("ξ = x/d Y+", r["xid_yp"])
+    if r["Mx_neg"] > 0: lin("ξ = x/d X-", r["xid_xn"])
+    if r["My_neg"] > 0: lin("ξ = x/d Y-", r["xid_yn"])
 
     def arm(lbl, As_calc, As_req, As_for, n, s):
         print(f"\n  {lbl}")
-        lin("As calculada", As_calc, "cm²/m"); lin("As requerida c/ mínimo", As_req, "cm²/m")
-        lin("As fornecida", As_for, "cm²/m"); lin("n barras/m", n, "barras")
+        lin("Aₛ calculada", As_calc, "cm²/m"); lin("Aₛ requerida c/ mínimo", As_req, "cm²/m")
+        lin("Aₛ fornecida", As_for, "cm²/m"); lin("n barras/m", n, "barras")
         lin("espaçamento", s, "cm")
         ok_nok(s <= r["s_max"], "espaçamento atende ao máximo", "espaçamento NÃO atende")
 
@@ -694,7 +1051,7 @@ def imprimir(d, r):
     lin("Ic", r["Ic"], "m⁴/m"); lin("Ieq", r["Ieq"], "m⁴/m")
     lin("flecha imediata quase permanente", r["f_qp"]*100, "cm")
     lin("flecha imediata carga variável", r["f_q"]*100, "cm")
-    lin("alpha_f", r["alpha_f"])
+    lin("α𝒇", r["alpha_f"])
     lin("flecha total diferida", r["f_total"]*100, "cm")
     lin("limite l/250", r["lim_250"]*100, "cm"); lin("limite l/350", r["lim_350"]*100, "cm")
     ok_nok(r["f_total"] <= r["lim_250"], "flecha total atende l/250", "flecha total NÃO atende l/250")
@@ -704,71 +1061,174 @@ def imprimir(d, r):
     cab("9. CISALHAMENTO")
     print("  Direção x")
     lin("Vsd,x aprox. na seção a d da face", r["Vsd_x"], "kN/m")
-    lin("VRd1,x", r["VRd1_x"], "kN/m"); lin("rho1,x", r["rho1_x"]); lin("k", r["k_cis_x"])
+    lin("VRd1,x", r["VRd1_x"], "kN/m"); lin("ρ₁,x", r["rho1_x"]); lin("k", r["k_cis_x"])
     ok_nok(r["cis_ok_x"], "cisalhamento em x atende", "cisalhamento em x NÃO atende")
     print("  Direção y")
     lin("Vsd,y aprox. na seção a d da face", r["Vsd_y"], "kN/m")
-    lin("VRd1,y", r["VRd1_y"], "kN/m"); lin("rho1,y", r["rho1_y"]); lin("k", r["k_cis_y"])
+    lin("VRd1,y", r["VRd1_y"], "kN/m"); lin("ρ₁,y", r["rho1_y"]); lin("k", r["k_cis_y"])
     ok_nok(r["cis_ok_y"], "cisalhamento em y atende", "cisalhamento em y NÃO atende")
     print("  Nota: sem modelagem explícita da ancoragem, adotou-se k=1,0 de forma conservadora.")
     print("  Nota: como a largura do apoio não é entrada, Vsd usa aproximação R - p*d.")
 
-    cab("10. RESUMO")
-    print(f"  h={d['h']*100:.1f} cm | {phi_s}")
-    print(f"  X+: {r['Asf_xp']:.3f} cm²/m -> {phi_s} c/{r['s_xp']:.1f} cm")
-    print(f"  Y+: {r['Asf_yp']:.3f} cm²/m -> {phi_s} c/{r['s_yp']:.1f} cm")
-    if r["Asf_xn"]: print(f"  X-: {r['Asf_xn']:.3f} cm²/m -> {phi_s} c/{r['s_xn']:.1f} cm")
-    if r["Asf_yn"]: print(f"  Y-: {r['Asf_yn']:.3f} cm²/m -> {phi_s} c/{r['s_yn']:.1f} cm")
-    print(f"  Flecha total={r['f_total']*100:.3f} cm (l/250={r['lim_250']*100:.3f} cm)")
+    cab("10. QUADRO-RESUMO")
+    print(f"  h={d['h']*100:.2f} cm | {phi_s}")
+    print(f"  X+: {r['Asf_xp']:.2f} cm²/m -> {phi_s} c/{r['s_xp']:.2f} cm")
+    print(f"  Y+: {r['Asf_yp']:.2f} cm²/m -> {phi_s} c/{r['s_yp']:.2f} cm")
+    if r["Asf_xn"]: print(f"  X-: {r['Asf_xn']:.2f} cm²/m -> {phi_s} c/{r['s_xn']:.2f} cm")
+    if r["Asf_yn"]: print(f"  Y-: {r['Asf_yn']:.2f} cm²/m -> {phi_s} c/{r['s_yn']:.2f} cm")
+    print(f"  Flecha imediata={r['f_qp']*100:.2f} cm | diferida={(r['f_total']-r['f_qp'])*100:.2f} cm")
+    print(f"  Flecha final={r['f_total']*100:.2f} cm (l/250={r['lim_250']*100:.2f} cm)")
+    print("  LIMITAÇÕES: ancoragens exigem dados adicionais;")
+    print("  nem análise integral de ELS; a flecha é estimativa simplificada.")
     sep(); print()
 
-def montar_dados(v: dict) -> dict:
-    lx, ly = v["lx"], v["ly"]
-    if lx <= 0 or ly <= 0:
-        raise ValueError("Os vãos devem ser positivos.")
-    if ly < lx:
-        lx, ly = ly, lx
-    if ly / lx > 2.0:
-        raise ValueError("lambda > 2,0: laje armada em uma direção. Fora do escopo desta versão.")
 
-    caso = int(v["caso"])
-    if caso not in range(1, 7):
-        raise ValueError("Casos 7–9 estão bloqueados nesta versão.")
 
-    caa = v["caa"]
-    cob_nbr = COB_NOMINAL[caa]
-    cob = v["cob"] or cob_nbr          # 0 = usar o nominal
-    if cob < cob_nbr:
-        raise ValueError(f"Cobrimento menor que o nominal de {cob_nbr} mm para CAA {caa}.")
 
-    fck, phi = v["fck"], v["phi"]
-    if not (20 <= fck <= 40):
-        raise ValueError("Use 20 <= fck <= 40 MPa nesta versão.")
-    if fck < FCK_MIN_CAA[caa]:
-        raise ValueError(f"Para CAA {caa}, adote no mínimo C{FCK_MIN_CAA[caa]}.")
-    if phi <= 0 or cob < phi:
-        raise ValueError("Diâmetro inválido ou maior que o cobrimento.")
+# ============================================================================
+# PADRONIZAÇÃO DAS FLECHAS - APLICÁVEL A AMBAS AS DIREÇÕES
+# As verificações de serviço usam os resultados de cada modelo.
+# Não confundir estimativas de pré-dimensionamento com verificação normativa.
+# ============================================================================
 
-    agregado, alpha_E = AGREGADOS[v["agregado"]]
-    if not (0 <= v["psi2"] <= 1):
-        raise ValueError("psi2 deve estar entre 0 e 1.")
+def _status(ok):
+    return "NÃO VERIFICADO" if ok is None else ("ATENDE" if ok else "NÃO ATENDE")
 
-    tipo = v["tipo"]
-    _, h_est, _, _ = estimar_h_bastos(lx, ly, caso, cob/1000, phi/1000)
-    h_min = altura_minima(tipo)
-    h = v["h"] or max(h_est, h_min)    # 0 = automático
-    if h < h_min:
-        raise ValueError(f"h menor que o mínimo de {h_min*100:.1f} cm.")
-    if phi/1000 > h/8:
-        raise ValueError(f"phi excede h/8 = {h*1000/8:.1f} mm.")
-    if v["tinf"] < v["t0"]:
-        raise ValueError("O tempo final deve ser >= t0.")
 
-    return dict(
-        lx=lx, ly=ly, caso=caso, tipo=tipo, caa=caa, cob=cob, cob_nbr=cob_nbr,
-        fck=fck, fyk=v["fyk"], phi=phi, agregado=agregado, alpha_E=alpha_E,
-        gc=v["gc"], g_contrapiso=v["g_contrapiso"], g_revest_inf=v["g_revest_inf"],
-        g_piso=v["g_piso"], g_paredes=v["g_paredes"], g_outros=v["g_outros"],
-        q=v["q"], psi2=v["psi2"], h=h, h_min=h_min, h_est=h_est,
-        t0=v["t0"], tinf=v["tinf"],
-    )
+def anexar_verificacoes_complementares(d, r):
+    """Padroniza os campos de flecha nos dois modelos."""
+    if 'f_imediata' not in r and 'f_qp' in r:
+        r['f_imediata'] = r['f_qp']
+        r['f_diferida'] = r['f_total']-r['f_qp']
+    return r
+
+
+def auditar_limites_normativos(d, r):
+    """Triagem explícita: NBR 6118:2026, 7.4.7, 13.2.4, 19.3.3, 20.1-20.2.
+
+    NÃO substitui verificação de continuidade, ancoragem, aberturas,
+    momentos volventes, fissuração, carregamentos e condições de contorno.
+    """
+    h_mm = 1000.0 * d['h']
+    phi = float(d['phi'])
+    cob = float(d['cob'])
+    caa = d['caa']
+    agregado_max = float(d.get('agregado_max_mm', 19.0))
+    checks = {}
+    checks['cobrimento_CAA_tabela_7_2'] = cob >= COB_NOMINAL[caa] - 1e-9
+    checks['cobrimento_maior_igual_bitola'] = cob >= phi - 1e-9
+    checks['agregado_dmax_menor_1_2_cobrimento'] = agregado_max <= 1.2*cob + 1e-9
+    checks['bitola_maxima_h_8'] = phi <= h_mm/8 + 1e-9
+    checks['espessura_minima_tipo_informado'] = d['h'] >= altura_minima(d['tipo']) - 1e-9
+    checks['espessura_util_para_uma_camada'] = h_mm > 2*cob + phi
+    for nome, detal in r.get('detalhamento', {}).items():
+        if detal['n'] <= 0: continue
+        smax = 33.0 if nome == 'distribuicao' else min(20.0, 2.0*d['h']*100)
+        checks['espacamento_maximo_'+nome] = detal['s_cm'] <= smax + 1e-9
+        checks['espacamento_livre_'+nome] = detal.get('livre_mm',-1) >= max(20., phi, 1.2*agregado_max) - 1e-9
+        checks['area_fornecida_'+nome] = detal['As_fornecida'] + 1e-9 >= (
+            r['Asdist'] if nome=='distribuicao' else
+            r['Aspos'] if nome=='principal_positiva' else
+            r['Asneg'] if nome=='principal_negativa' else
+            r[{'x_positiva':'As_xp','y_positiva':'As_yp','x_negativa':'As_xn','y_negativa':'As_yn'}[nome]])
+    if d['unidirecional']:
+        base = rho_min(d['fck'])/100*100*(d['h']*100)
+        checks['armadura_secundaria_minima'] = r['Asdist'] + 1e-9 >= max(0.2*r['Aspos'], 0.9, 0.5*base)
+    # Hipóteses não identificáveis a partir dos dados do terminal.
+    pendencias = [
+        'Bordas sem continuidade ligadas aos apoios: armadura negativa de borda >= 0,67 rho_min e extensão >= 0,15 lx (19.3.3.2/Tabela 19.1); geometria das bordas não informada.',
+        'Bordas livres e aberturas: armaduras longitudinais e transversais adicionais (20.2); aberturas não modeladas.',
+        'Comprimentos de ancoragem, emendas, prolongamento de armadura positiva >= 4 cm além do eixo teórico do apoio e escalonamento (20.1): não detalhados.',
+        'Momentos volventes e compatibilidade com lajes adjacentes: não modelados explicitamente.',
+        'Lajes lisas/cogumelo, balanços, cargas concentradas, veículos, punção e geometrias não retangulares: fora do escopo.',
+        'Modelo simplificado de flecha: coeficientes de placas/rigidez equivalente não substituem análise refinada de fissuração, fluência, retração e sequência construtiva.',
+        'Carga permanente adicional fixa de 1,28 kN/m², psi2=0,30, idade de carregamento e agregado são hipóteses acadêmicas, não verificações de uso real.'
+    ]
+    r['auditoria_normativa'] = {'checks':checks,'pendencias':pendencias,
+        'status':'NAO ATENDE' if not all(checks.values()) else 'TRIAGEM ATENDE; VALIDACAO DE PROJETO PENDENTE'}
+    return r
+
+
+def imprimir_auditoria_normativa(r):
+    """Exibe somente os critérios calculados, sem listar limitações no terminal.
+
+    Os dados completos de auditoria e as limitações de escopo continuam
+    disponíveis em r['auditoria_normativa'] para documentação técnica.
+    """
+    a = r.get('auditoria_normativa')
+    if not a:
+        return
+    print('\n' + '=' * 76)
+    print('  VERIFICAÇÕES NORMATIVAS — NBR 6118:2026')
+    print('=' * 76)
+    for nome, atende in a['checks'].items():
+        print(('  [OK] ' if atende else '  [FALHA] ') + nome.replace('_', ' '))
+    total = len(a['checks'])
+    aprovados = sum(bool(v) for v in a['checks'].values())
+    print(f'  RESULTADO DOS CRITÉRIOS VERIFICADOS: {aprovados}/{total} atendidos.')
+    if aprovados < total:
+        print('  ATENÇÃO: há critérios calculados que não foram atendidos.')
+
+
+def imprimir_parecer_final(d, r):
+    """Parecer de fácil leitura, sem confundir triagem com aprovação integral."""
+    largura = 78
+    def titulo(txt):
+        print("\n" + "═" * largura)
+        print("  " + txt)
+        print("═" * largura)
+    def secao(txt):
+        print("\n  " + txt)
+        print("  " + "─" * (largura - 4))
+    def item(nome, situacao, calculado=None, limite=None):
+        print(f"  {nome}")
+        print(f"      Situação: {situacao}")
+        if calculado is not None and limite is not None:
+            print(f"      Flecha calculada : {calculado*100:8.2f} cm")
+            print(f"      Limite de referência: {limite*100:5.2f} cm")
+        print()
+
+    titulo("PARECER FINAL | VERIFICAÇÕES DA LAJE")
+    modelo = "UNIDIRECIONAL" if d['unidirecional'] else "BIDIRECIONAL"
+    print(f"\n  Modelo estrutural  : {modelo}")
+    print(f"  Dimensões           : lₓ = {d['lx']:.2f} m  |  lᵧ = {d['ly']:.2f} m")
+    print(f"  Espessura           : h = {d['h']*100:.2f} cm")
+    print(f"  Armadura principal  : Ø {d['phi']:g} mm")
+    print(f"  Carga variável      : qₖ = {d['q']:.2f} kN/m²")
+
+    checks=[]
+    if d['unidirecional']:
+        checks.extend([
+            ("Flecha final estimada (referência lₓ/250)",r.get('els_total_ok'),r.get('f_total'),r.get('lim_250')),
+            ("Flecha de carga variável (referência lₓ/350)",r.get('els_q_ok'),r.get('f_q'),r.get('lim_350')),
+            ("Cisalhamento simplificado",r.get('cis_ok'),None,None),
+        ])
+    else:
+        checks.extend([
+            ("Flecha final estimada (referência lₓ/250)",r['f_total'] <= r['lim_250'],r['f_total'],r['lim_250']),
+            ("Flecha de carga variável (referência lₓ/350)",r['f_q'] <= r['lim_350'],r['f_q'],r['lim_350']),
+            ("Cisalhamento simplificado — direção X",r.get('cis_ok_x'),None,None),
+            ("Cisalhamento simplificado — direção Y",r.get('cis_ok_y'),None,None),
+        ])
+    checks.append(("Acomodação geométrica das barras",r.get('detalhamento_ok'),None,None))
+    checks.append(("Limites normativos verificáveis", all(r.get('auditoria_normativa',{}).get('checks',{}).values()),None,None))
+
+    secao("01 | VERIFICAÇÕES CALCULADAS")
+    for nome, cond, valor, limite in checks:
+        item(nome,_status(cond),valor,limite)
+
+    secao("02 | CONCLUSÃO")
+    falhas=[nome for nome,cond,_,_ in checks if cond is False]
+    pendentes=[nome for nome,cond,_,_ in checks if cond is None]
+    if falhas:
+        print("  RESULTADO: NÃO ATENDE A TODOS OS CRITÉRIOS CALCULADOS.")
+        print("\n  Itens que não atenderam:")
+        for nome in falhas: print("    • " + nome)
+        print("\n  Orientação: revisar os parâmetros e recalcular a laje.")
+    elif pendentes:
+        print("  RESULTADO: CRITÉRIOS PARCIALMENTE VERIFICADOS.")
+        print("  Há verificações calculáveis sem resultado conclusivo.")
+    else:
+        print("  RESULTADO: ATENDE AOS CRITÉRIOS CALCULADOS NO MODELO.")
+    print("\n  Referências de estudo: ABNT NBR 6118:2026 e NBR 6120:2019.")
+    print("═" * largura + "\n")

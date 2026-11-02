@@ -64,7 +64,7 @@
  [],
  False,
  False,
- 1793137779,
+ 1793651878,
  [('runw.exe',
    'C:\\Users\\fpaul\\Documents\\GitHub\\Calculo-de-lajes\\.venv\\Lib\\site-packages\\PyInstaller\\bootloader\\Windows-64bit-intel\\runw.exe',
    'EXECUTABLE')],

@@ -28,8 +28,8 @@ Este guia explica como rodar o projeto localmente e como gerar o executável e o
 ## 1. Clonar o repositório
 
 ```bash
-git clone https://github.com/SEU-USUARIO/Calculo-de-lajes.git
-cd Calculo-de-lajes
+git clone https://github.com/SEU-USUARIO/SlabCalc.git
+cd SlabCalc
 ```
 
 ## 2. Criar e ativar o ambiente virtual
@@ -99,7 +99,7 @@ O resultado esperado termina com `Todos os casos idênticos.`
 Com o ambiente virtual ativo, na raiz do projeto:
 
 ```bash
-pyinstaller --noconfirm --windowed --name CalculoLajes --icon assets\ico.ico --add-data "assets;assets" main.py
+pyinstaller --noconfirm --windowed --name SlabCalc --icon assets\ico.ico --add-data "assets;assets" main.py
 ```
 
 - `--icon` define o ícone do arquivo `.exe`.
@@ -110,16 +110,16 @@ Para refazer o build do zero (por exemplo, ao trocar o ícone), apague os arquiv
 ```bash
 rmdir /s /q build
 rmdir /s /q dist
-del CalculoLajes.spec
+del SlabCalc.spec
 ```
 
 O resultado fica em:
 
 ```
-dist\CalculoLajes\CalculoLajes.exe
+dist\SlabCalc\SlabCalc.exe
 ```
 
-Para distribuir, use a pasta `dist\CalculoLajes` **inteira** (o `.exe` depende da pasta `_internal` e das DLLs). O arquivo em `build\CalculoLajes\` é apenas intermediário, não use.
+Para distribuir, use a pasta `dist\SlabCalc` **inteira** (o `.exe` depende da pasta `_internal` e das DLLs). O arquivo em `build\SlabCalc\` é apenas intermediário, não use.
 
 > Os avisos `update_exe_pe_checksum ... OSError(22)` no log do PyInstaller são inofensivos. O build terminou com sucesso quando aparece `Build complete!`.
 
@@ -136,7 +136,7 @@ Para distribuir, use a pasta `dist\CalculoLajes` **inteira** (o `.exe` depende d
 O instalador é gerado em:
 
 ```
-instalador\CalculoLajes-Setup-2.0.0.exe
+instalador\SlabCalc-Setup-2.0.0.exe
 ```
 
 A compressão pode levar alguns minutos, porque o PySide6 é grande.
@@ -158,7 +158,7 @@ A compressão pode levar alguns minutos, porque o PySide6 é grande.
 
 2. Faça commit e push do código.
 3. No GitHub, vá em **Releases → Draft a new release**.
-4. Crie a tag (ex.: `v2.0.0`), anexe o `CalculoLajes-Setup-2.0.0.exe` e clique em **Publish release**.
+4. Crie a tag (ex.: `v2.0.0`), anexe o `SlabCalc-Setup-2.0.0.exe` e clique em **Publish release**.
 
 ---
 
@@ -182,7 +182,7 @@ A compressão pode levar alguns minutos, porque o PySide6 é grande.
 ## Estrutura do projeto
 
 ```
-Calculo-de-lajes/
+SlabCalc/
 ├── main.py              # ponto de entrada da interface
 ├── calculo.py           # tabelas, fórmulas e funções de cálculo
 ├── gui.py               # interface PySide6

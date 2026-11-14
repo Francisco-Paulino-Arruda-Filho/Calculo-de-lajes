@@ -16,8 +16,8 @@
            with:
              python-version: "3.12"
          - run: pip install PySide6-Essentials pyinstaller
-         - run: pyinstaller --noconfirm --windowed --name CalculoLajes --add-data "assets:assets" main.py
-         - run: tar -czf CalculoLajes-${{ github.ref_name }}-linux-x64.tar.gz -C dist CalculoLajes
+         - run: pyinstaller --noconfirm --windowed --name SlabCalc --add-data "assets:assets" main.py
+         - run: tar -czf SlabCalc-${{ github.ref_name }}-linux-x64.tar.gz -C dist SlabCalc
          - uses: softprops/action-gh-release@v2
            with:
-             files: CalculoLajes-*-linux-x64.tar.gz
+             files: SlabCalc-*-linux-x64.tar.gz

@@ -5,7 +5,7 @@ from contextlib import redirect_stdout
 from math import ceil
 
 from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
     QApplication, QAbstractItemView, QComboBox, QDoubleSpinBox,
@@ -947,7 +947,7 @@ class Janela(QMainWindow):
         super().__init__()
 
         self.setWindowTitle(
-            "Calculadora de Lajes Maciças — NBR 6118"
+            "SlabCalc"
         )
 
         self.resize(1360, 900)
@@ -1013,7 +1013,7 @@ class Janela(QMainWindow):
         textos = QVBoxLayout()
         textos.setSpacing(3)
 
-        titulo = QLabel("Calculadora de Lajes Maciças")
+        titulo = QLabel("SlabCalc")
         titulo.setObjectName("headerTitle")
 
         subtitulo = QLabel(
@@ -1027,12 +1027,28 @@ class Janela(QMainWindow):
         layout.addLayout(textos)
         layout.addStretch(1)
 
-        norma = QLabel("NBR 6118")
-        norma.setObjectName("headerBadge")
-        norma.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo = QLabel()
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        caminho = caminho_recurso("ifce_logo.png")
+        pm = QPixmap(caminho) if caminho else QPixmap()
+
+        if not pm.isNull():
+            dpr = self.devicePixelRatioF()
+            pm = pm.scaledToHeight(
+                int(60 * dpr),
+                Qt.TransformationMode.SmoothTransformation
+            )
+            pm.setDevicePixelRatio(dpr)
+
+            logo.setObjectName("headerLogo")
+            logo.setPixmap(pm)
+        else:
+            logo.setObjectName("headerBadge")
+            logo.setText("NBR 6118")
 
         layout.addWidget(
-            norma,
+            logo,
             0,
             Qt.AlignmentFlag.AlignVCenter
         )
@@ -1810,7 +1826,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
 
     app.setApplicationName(
-        "Calculadora de Lajes Maciças"
+        "SlabCalc"
     )
 
     app.setFont(

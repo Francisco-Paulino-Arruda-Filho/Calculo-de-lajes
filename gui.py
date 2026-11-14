@@ -39,62 +39,57 @@ def caminho_recurso(nome):
     return None
 
 
-def montar_dados_padrao(lx, ly, vinculacao, caa, phi, q, h_cm):
+def montar_dados_padrao(
+    lx, ly, vinculacao, caa, phi, q, h_cm,
+    g2k=0.0, fck=None, cob=None, tipo="piso",
+    fyk=500.0, agregado_id="2", aco="CA-50"
+):
+    """Monta os dados da GUI sem impor cargas adicionais fixas."""
     info = calculo.classificar_laje(lx, ly)
     uni = info["unidirecional"]
 
     if vinculacao not in info["casos"]:
         raise ValueError("Selecione a vinculação da laje.")
+    if tipo == "balanco":
+        raise ValueError("O modelo de lajes em balanço ainda não está implementado.")
 
-    tipo = "piso"
-    cob_nbr = calculo.COB_NOMINAL[caa]
-    cob = float(cob_nbr)
-    fck = calculo.FCK_MIN_CAA[caa]
+    cob_min = calculo.COB_NOMINAL[caa]
+    fck_min = calculo.FCK_MIN_CAA[caa]
+    cob = float(cob_min if cob is None else cob)
+    fck = float(fck_min if fck is None else fck)
+    if fck < fck_min:
+        raise ValueError(f"Para CAA {caa}, o fck mínimo é {fck_min} MPa.")
+    if cob < cob_min:
+        raise ValueError(f"Para CAA {caa}, o cobrimento mínimo é {cob_min} mm.")
 
-    agregado, alpha_E = calculo.AGREGADOS["2"]
+    try:
+        agregado, alpha_E = calculo.AGREGADOS[str(agregado_id)]
+    except KeyError as exc:
+        raise ValueError("Tipo de agregado inválido.") from exc
 
     caso = 1 if uni else vinculacao
     apoio_1d = vinculacao if uni else None
-
-    h = h_cm / 100.0
+    h = float(h_cm) / 100.0
     h_min = calculo.altura_minima(tipo)
+    if h < h_min:
+        raise ValueError(
+            f"A espessura mínima para {tipo} sem balanço é {h_min * 100:.0f} cm."
+        )
 
     _, h_est, _, _ = calculo.estimar_h_bastos(
-        info["lx"],
-        info["ly"],
-        caso,
-        cob / 1000,
-        phi / 1000
+        info["lx"], info["ly"], caso, cob / 1000, phi / 1000
     )
 
     return dict(
-        lx=info["lx"],
-        ly=info["ly"],
-        caso=caso,
-        unidirecional=uni,
-        apoio_1d=apoio_1d,
-        tipo=tipo,
-        caa=caa,
-        cob=cob,
-        cob_nbr=cob_nbr,
-        fck=fck,
-        fyk=500.0,
-        phi=phi,
-        agregado=agregado,
-        alpha_E=alpha_E,
-        gc=25.0,
-        g_contrapiso=0.0,
-        g_revest_inf=0.0,
-        g_piso=0.0,
-        g_paredes=0.0,
-        g_outros=1.28,
-        q=q,
-        psi2=0.30,
-        h=h,
-        h_min=h_min,
-        h_est=h_est,
-        t0=14.0 / 30.0,
-        tinf=70.0,
+        lx=info["lx"], ly=info["ly"], caso=caso,
+        unidirecional=uni, apoio_1d=apoio_1d, tipo=tipo,
+        caa=caa, cob=cob, cob_nbr=cob_min, fck=fck,
+        fyk=float(fyk), aco=aco, phi=float(phi),
+        agregado=agregado, alpha_E=alpha_E, gc=25.0,
+        g_contrapiso=0.0, g_revest_inf=0.0, g_piso=0.0,
+        g_paredes=0.0, g_outros=float(g2k), q=float(q),
+        psi2=0.30, h=h, h_min=h_min, h_est=h_est,
+        t0=14.0 / 30.0, tinf=70.0,
     )
 
 
@@ -307,16 +302,25 @@ class VinculacaoWidget(QWidget):
         self._sel = None
         self._rects = {}
 
-        self.setMinimumSize(340, 300)
+        self.setMinimumWidth(340)
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding
+            QSizePolicy.Policy.Fixed
         )
+        self._altura_cartao = 158
+        self._atualizar_altura()
+
+    def _atualizar_altura(self):
+        linhas = max(1, ceil(len(self._casos) / self.COLUNAS))
+        self.setMinimumHeight(linhas * self._altura_cartao + self.ALTURA_LEGENDA)
+        self.resize(self.width(), self.minimumHeight())
 
     def configurar(self, casos, unidirecional):
         self._casos = dict(casos)
         self._uni = unidirecional
         self._sel = None
+        self._atualizar_altura()
+        self.updateGeometry()
         self.update()
 
     def selecionar(self, chave):
@@ -553,6 +557,83 @@ class VinculacaoWidget(QWidget):
             int(Qt.AlignmentFlag.AlignVCenter),
             "lx = menor vão (horizontal) | ly = maior vão (vertical)"
         )
+
+
+class DesenhosGeometria(QWidget):
+    """Planta proporcional e vista esquemática da laje."""
+
+    def __init__(self):
+        super().__init__()
+        self.lx = 3.0
+        self.ly = 5.0
+        self.setMinimumHeight(170)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def configurar(self, lx, ly):
+        self.lx, self.ly = float(lx), float(ly)
+        self.update()
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.fillRect(self.rect(), QColor("#FFFFFF"))
+        w, h = self.width(), self.height()
+        p.setFont(QFont("Segoe UI", 9, QFont.Weight.DemiBold))
+        p.setPen(QColor("#243B53"))
+        p.drawText(12, 20, "PLANTA DA LAJE")
+
+        # Reserva espaço para os dois rótulos, evitando que o texto vertical
+        # seja cortado pela margem esquerda do widget.
+        area = QRectF(72, 34, max(70, w - 100), h - 78)
+        lx = max(self.lx, 0.001)
+        ly = max(self.ly, 0.001)
+        escala = min(area.width() / lx, area.height() / ly)
+        rw, rh = lx * escala, ly * escala
+        x = area.center().x() - rw / 2
+        y = area.center().y() - rh / 2
+
+        p.setPen(QPen(QColor("#243B53"), 1.8))
+        p.setBrush(QColor("#DCEBFA"))
+        p.drawRect(QRectF(x, y, rw, rh))
+
+        # lx é sempre o menor vão e aparece na dimensão horizontal;
+        # ly é o maior vão e aparece na dimensão vertical.
+        p.setPen(QPen(QColor("#2563D9"), 1.2))
+        y_dim = min(h - 8, y + rh + 17)
+        p.drawLine(int(x), int(y_dim), int(x + rw), int(y_dim))
+        p.drawText(
+            QRectF(x - 28, y_dim + 2, rw + 56, 20),
+            int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop),
+            f"Lx = {self.lx:g} m"
+        )
+        # Dimensão vertical Ly
+        p.setPen(QPen(QColor("#2563D9"), 1.2))
+
+        # Linha vertical próxima ao retângulo
+        x_dim = x - 12
+        p.drawLine(
+            int(x_dim), int(y),
+            int(x_dim), int(y + rh)
+        )
+
+        # Pequenos traços nas extremidades
+        p.drawLine(int(x_dim), int(y), int(x - 5), int(y))
+        p.drawLine(int(x_dim), int(y + rh), int(x - 5), int(y + rh))
+
+        # Texto vertical
+        p.save()
+        p.translate(x - 27, y + rh / 2)
+        p.rotate(-90)
+        p.drawText(
+            QRectF(-rh / 2, -10, rh, 20),
+            int(Qt.AlignmentFlag.AlignCenter),
+            f"Ly = {self.ly:g} m"
+        )
+        p.restore()
+
+        # A vista esquemática lateral foi removida para simplificar a área
+        # de geometria e priorizar o espaço dos casos de vinculação.
+        p.end()
 
 
 # ---------------------------------------------------------------------------
@@ -973,8 +1054,7 @@ class Janela(QMainWindow):
         root.addWidget(self.tabs, 1)
 
         rodape = QLabel(
-            "FERRAMENTA DE APOIO ACADÊMICO  •  Confira as premissas e os resultados "
-            "antes de utilizar os dados em um projeto."
+            "FERRAMENTA DE APOIO ACADÊMICO"
         )
 
         rodape.setObjectName("footerText")
@@ -1004,7 +1084,7 @@ class Janela(QMainWindow):
         layout.setContentsMargins(20, 16, 20, 16)
         layout.setSpacing(15)
 
-        marca = QLabel("CL")
+        marca = QLabel("SC")
         marca.setObjectName("brandMark")
         marca.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -1017,7 +1097,7 @@ class Janela(QMainWindow):
         titulo.setObjectName("headerTitle")
 
         subtitulo = QLabel(
-            "Dimensionamento, verificações e memória de cálculo"
+            "Dimensionamento, verificações e memória de cálculo\nDo cálculo à compreensão estrutural."
         )
         subtitulo.setObjectName("headerSubtitle")
 
@@ -1211,11 +1291,18 @@ class Janela(QMainWindow):
         v.addWidget(texto_vinc)
         v.addWidget(self.cmb_vinc)
 
+        # Planta no painel esquerdo, acima dos campos de geometria.
+        # Assim, os casos de vinculação podem ocupar toda a altura do painel direito.
+        self.desenhos_geometria = DesenhosGeometria()
+        self.desenhos_geometria.setMinimumHeight(190)
+        self.desenhos_geometria.setMaximumHeight(210)
+
         # Painel esquerdo com rolagem
         esquerda = QVBoxLayout()
         esquerda.setSpacing(10)
         esquerda.setContentsMargins(0, 0, 8, 0)
 
+        esquerda.addWidget(self.desenhos_geometria)
         esquerda.addWidget(g_vaos)
         esquerda.addWidget(g_class)
         esquerda.addWidget(g_vinc)
@@ -1274,7 +1361,20 @@ class Janela(QMainWindow):
         dica_canvas.setWordWrap(True)
 
         canvas_lay.addWidget(dica_canvas)
-        canvas_lay.addWidget(self.img, 1)
+
+        # A área de cartões tem rolagem própria. O widget interno mantém
+        # altura suficiente para desenhar todas as linhas sem comprimi-las.
+        rolagem_casos = QScrollArea()
+        rolagem_casos.setWidgetResizable(True)
+        rolagem_casos.setFrameShape(QFrame.Shape.NoFrame)
+        rolagem_casos.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        rolagem_casos.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        rolagem_casos.setWidget(self.img)
+        canvas_lay.addWidget(rolagem_casos, 1)
 
         g_canvas.setMinimumWidth(340)
         g_canvas.setSizePolicy(
@@ -1290,13 +1390,16 @@ class Janela(QMainWindow):
         splitter.addWidget(rolagem_esq)
         splitter.addWidget(g_canvas)
 
-        splitter.setStretchFactor(0, 4)
-        splitter.setStretchFactor(1, 6)
+        # Prioriza a área dos casos de vinculação no lado direito.
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 7)
 
-        splitter.setSizes([420, 650])
+        splitter.setSizes([350, 820])
 
         self.splitter_geometria = splitter
 
+        # O painel de vinculações fica à direita e ocupa toda a altura
+        # disponível; a planta permanece no painel esquerdo.
         lay.addWidget(splitter, 1)
 
         return pagina
@@ -1323,6 +1426,8 @@ class Janela(QMainWindow):
         self.lbl_ly.setText(f"{f2(i['ly'], 3)} m")
         self.lbl_lam.setText(f2(i["lambda"], 3))
         self.lbl_nota.setText(i["nota"])
+        if hasattr(self, "desenhos_geometria"):
+            self.desenhos_geometria.configurar(i["lx"], i["ly"])
 
         self.cmb_vinc.blockSignals(True)
 
@@ -1376,179 +1481,174 @@ class Janela(QMainWindow):
 
     def _aba_dados(self):
         pagina = QWidget()
-
         lay = QVBoxLayout(pagina)
         lay.setContentsMargins(22, 18, 22, 20)
-        lay.setSpacing(15)
-
-        lay.addWidget(
-            self._intro(
-                "Parâmetros de dimensionamento",
-                "Defina os parâmetros variáveis. As hipóteses do perfil "
-                "acadêmico são exibidas ao lado para conferência."
-            )
-        )
+        lay.setSpacing(12)
+        lay.addWidget(self._intro(
+            "Parâmetros de dimensionamento",
+            "Informe os materiais, a espessura e as ações características. "
+            "Os valores sugeridos pela CAA podem ser editados, respeitando os mínimos."
+        ))
 
         self.cmb_caa = QComboBox()
-
-        for txt, k in (
-            ("I — Rural", "I"),
-            ("II — Urbana", "II"),
-            ("III — Marinha/Industrial", "III"),
-            ("IV — Muito agressiva", "IV")
-        ):
-            self.cmb_caa.addItem(txt, k)
-
+        for txt, key in (("I — Rural", "I"), ("II — Urbana", "II"),
+                         ("III — Marinha/Industrial", "III"),
+                         ("IV — Muito agressiva", "IV")):
+            self.cmb_caa.addItem(txt, key)
         self.cmb_caa.setCurrentIndex(1)
 
-        self.phi = spin(4, 25, 8.0, 1, "mm", 0.5)
-        self.q = spin(0, 50, 2.0, 2, "kN/m²", 0.5)
-        self.h = spin(1, 100, 12.0, 1, "cm", 0.5)
+        self.fck = spin(10, 40, 25, 0, "MPa", 5)
+        self.cob = spin(0, 80, 25, 0, "mm", 1)
+        self.h = spin(1, 100, 12, 1, "cm", 0.5)
+        self.g2k = spin(0, 100, 0, 2, "kN/m²", 0.1)
+        self.q = spin(0, 100, 0, 2, "kN/m²", 0.1)
 
-        self.cmb_caa.currentIndexChanged.connect(
-            self.atualizar_fixos
-        )
+        self.cmb_tipo = QComboBox()
+        self.cmb_tipo.addItem("Piso", "piso")
+        self.cmb_tipo.addItem("Cobertura", "cobertura")
 
-        self.phi.valueChanged.connect(
-            self.atualizar_estimativa
-        )
+        self.cmb_aco = QComboBox()
+        self.cmb_aco.addItem("CA-50 (fyk = 500 MPa)", ("CA-50", 500.0))
+        self.cmb_aco.addItem("CA-60 (fyk = 600 MPa)", ("CA-60", 600.0))
+        self.phi = QComboBox()
+        self._atualizar_bitolas()
+
+        self.cmb_agregado = QComboBox()
+        for key, (nome, alpha) in calculo.AGREGADOS.items():
+            self.cmb_agregado.addItem(f"{nome} (αE = {alpha:.2f})", key)
+        idx_ag = self.cmb_agregado.findData("2")
+        if idx_ag >= 0:
+            self.cmb_agregado.setCurrentIndex(idx_ag)
+
+        self.cmb_caa.currentIndexChanged.connect(self.atualizar_fixos)
+        self.cmb_tipo.currentIndexChanged.connect(self.atualizar_validacao)
+        self.cmb_aco.currentIndexChanged.connect(self._atualizar_bitolas)
+        for campo in (self.fck, self.cob, self.h, self.g2k, self.q):
+            campo.valueChanged.connect(self.atualizar_validacao)
+        self.phi.currentIndexChanged.connect(self.atualizar_estimativa)
 
         g_in = QGroupBox("Dados informados")
-
         f = QFormLayout(g_in)
-        f.setHorizontalSpacing(18)
-        f.setVerticalSpacing(16)
+        f.setHorizontalSpacing(16)
+        f.setVerticalSpacing(9)
+        f.addRow("Classe de agressividade (CAA)", self.cmb_caa)
+        f.addRow("fck do concreto", self.fck)
+        f.addRow("Cobrimento nominal", self.cob)
+        f.addRow("Tipo de utilização", self.cmb_tipo)
+        f.addRow("Espessura da laje h", self.h)
+        f.addRow("Carga permanente adicional g₂,k", self.g2k)
+        f.addRow("Carga variável característica qk", self.q)
+        f.addRow("Categoria do aço", self.cmb_aco)
+        f.addRow("Bitola das barras principais φ", self.phi)
+        f.addRow("Tipo de agregado", self.cmb_agregado)
 
-        f.addRow(
-            "Classe de agressividade (CAA)",
-            self.cmb_caa
-        )
-
-        f.addRow(
-            "Bitola das barras principais φ",
-            self.phi
-        )
-
-        f.addRow(
-            "Carga variável característica qk",
-            self.q
-        )
-
-        f.addRow(
-            "Espessura adotada h",
-            self.h
-        )
+        g_info = QGroupBox("Referências e validação")
+        x = QFormLayout(g_info)
+        self.lbl_fck_min = QLabel()
+        self.lbl_cob_min = QLabel()
+        self.lbl_h_min = QLabel()
+        self.lbl_peso = QLabel("25,00 kN/m³ — concreto armado")
+        self.lbl_alerta = QLabel()
+        self.lbl_alerta.setWordWrap(True)
+        self.lbl_alerta.setStyleSheet("color: #B42318; font-weight: 700;")
+        x.addRow("fck mínimo sugerido", self.lbl_fck_min)
+        x.addRow("Cobrimento mínimo sugerido", self.lbl_cob_min)
+        x.addRow("Espessura mínima", self.lbl_h_min)
+        x.addRow("Peso específico", self.lbl_peso)
+        x.addRow(self.lbl_alerta)
 
         self.lbl_est = QLabel()
         self.lbl_est.setObjectName("estimateCallout")
         self.lbl_est.setWordWrap(True)
-
-        f.addRow(self.lbl_est)
-
-        self.lbl_fck = QLabel()
-        self.lbl_cob = QLabel()
-
-        g_fix = QGroupBox(
-            "Hipóteses fixas do perfil acadêmico"
-        )
-
-        x = QFormLayout(g_fix)
-        x.setHorizontalSpacing(18)
-        x.setVerticalSpacing(12)
-
-        x.addRow(
-            "Tipo de laje",
-            QLabel("Piso não em balanço (h mínimo = 8 cm)")
-        )
-
-        x.addRow("fck (mínimo da CAA)", self.lbl_fck)
-        x.addRow("Cobrimento nominal", self.lbl_cob)
-        x.addRow("Aço", QLabel("CA-50 (fyk = 500 MPa)"))
-        x.addRow("Agregado", QLabel("Granito/gnaisse (αE = 1,00)"))
-        x.addRow("Peso específico do concreto", QLabel("25,00 kN/m³"))
-        x.addRow("Carga permanente adicional", QLabel("1,28 kN/m²"))
-        x.addRow("ψ2", QLabel("0,30"))
-        x.addRow("Fluência", QLabel("t0 = 14 dias; t = 70 meses"))
+        x.addRow(self.lbl_est)
 
         conteudo = QHBoxLayout()
-        conteudo.setSpacing(16)
-
-        conteudo.addWidget(g_in, 1)
-        conteudo.addWidget(g_fix, 1)
-
+        conteudo.setSpacing(14)
+        conteudo.addWidget(g_in, 3)
+        conteudo.addWidget(g_info, 2)
         lay.addLayout(conteudo)
 
         acoes = QHBoxLayout()
         acoes.addStretch(1)
-
-        btn = QPushButton(
-            "✓   Calcular dimensionamento"
-        )
-
-        btn.setObjectName("primaryButton")
-        btn.setMinimumWidth(245)
-        btn.setMinimumHeight(46)
-
-        btn.clicked.connect(self.calcular)
-
-        acoes.addWidget(btn)
+        self.btn_calcular = QPushButton("✓   Calcular dimensionamento")
+        self.btn_calcular.setObjectName("primaryButton")
+        self.btn_calcular.setMinimumWidth(245)
+        self.btn_calcular.setMinimumHeight(46)
+        self.btn_calcular.clicked.connect(self.calcular)
+        acoes.addWidget(self.btn_calcular)
         lay.addLayout(acoes)
-
         lay.addStretch(1)
-
         self.atualizar_fixos()
-
         return pagina
+
+    def _atualizar_bitolas(self):
+        if not hasattr(self, "phi"):
+            return
+        atual = self.phi.currentData() if self.phi.count() else 8.0
+        self.phi.blockSignals(True)
+        self.phi.clear()
+        # Bitolas usuais em ordem crescente.
+        for diametro in (5.0, 6.3, 8.0, 10.0, 12.5, 16.0, 20.0, 25.0):
+            self.phi.addItem(f"{diametro:g} mm", diametro)
+        idx = self.phi.findData(atual)
+        self.phi.setCurrentIndex(idx if idx >= 0 else self.phi.findData(8.0))
+        self.phi.blockSignals(False)
+        self.atualizar_estimativa()
 
     def atualizar_fixos(self):
         caa = self.cmb_caa.currentData()
+        fmin = calculo.FCK_MIN_CAA[caa]
+        cmin = calculo.COB_NOMINAL[caa]
+        self.lbl_fck_min.setText(f"C{fmin} ({fmin} MPa)")
+        self.lbl_cob_min.setText(f"{cmin} mm")
+        self.fck.setValue(max(self.fck.value(), fmin))
+        self.cob.setValue(max(self.cob.value(), cmin))
+        self.atualizar_validacao()
+        self.atualizar_estimativa()
 
-        self.lbl_fck.setText(
-            f"C{calculo.FCK_MIN_CAA[caa]} "
-            f"({calculo.FCK_MIN_CAA[caa]} MPa)"
-        )
-
-        self.lbl_cob.setText(
-            f"{calculo.COB_NOMINAL[caa]} mm"
-        )
-
+    def atualizar_validacao(self, *_args):
+        if not hasattr(self, "lbl_alerta"):
+            return
+        caa = self.cmb_caa.currentData()
+        tipo = self.cmb_tipo.currentData()
+        hmin = calculo.altura_minima(tipo) if tipo != "balanco" else None
+        erros = []
+        campos = ((self.fck, self.fck.value() >= calculo.FCK_MIN_CAA[caa]),
+                  (self.cob, self.cob.value() >= calculo.COB_NOMINAL[caa]),
+                  (self.h, hmin is not None and self.h.value()/100 >= hmin))
+        for campo, ok in campos:
+            campo.setStyleSheet("" if ok else "QDoubleSpinBox { border: 2px solid #D92D20; background: #FEF3F2; }")
+        if self.fck.value() < calculo.FCK_MIN_CAA[caa]:
+            erros.append(f"fck mínimo para CAA {caa}: {calculo.FCK_MIN_CAA[caa]} MPa.")
+        if self.cob.value() < calculo.COB_NOMINAL[caa]:
+            erros.append(f"Cobrimento mínimo para CAA {caa}: {calculo.COB_NOMINAL[caa]} mm.")
+        if tipo == "balanco":
+            erros.append("Lajes em balanço não podem ser calculadas nesta versão: o modelo estrutural não está implementado.")
+        elif self.h.value()/100 < hmin:
+            erros.append(f"Espessura mínima para {tipo}: {hmin*100:.0f} cm.")
+        self.lbl_h_min.setText("Não disponível para balanço" if hmin is None else f"{hmin*100:.0f} cm")
+        self.lbl_alerta.setText("\n".join(erros))
+        self.btn_calcular.setEnabled(not erros)
         self.atualizar_estimativa()
 
     def atualizar_estimativa(self):
         if self.info is None or not hasattr(self, "lbl_est"):
             return
-
         try:
             vinc = self.cmb_vinc.currentData()
-
-            caso = (
-                1 if self.info["unidirecional"]
-                else (vinc or 1)
-            )
-
-            cob = calculo.COB_NOMINAL[
-                self.cmb_caa.currentData()
-            ]
-
+            caso = 1 if self.info["unidirecional"] else (vinc or 1)
+            cob = self.cob.value()
+            phi = float(self.phi.currentData() or 8.0)
             _, h_est, l_star, n = calculo.estimar_h_bastos(
-                self.info["lx"],
-                self.info["ly"],
-                caso,
-                cob / 1000,
-                self.phi.value() / 1000
+                self.info["lx"], self.info["ly"], caso, cob/1000, phi/1000
             )
-
+            hmin = calculo.altura_minima(self.cmb_tipo.currentData()) if self.cmb_tipo.currentData() != "balanco" else 0.10
             self.lbl_est.setText(
-                f"Estimativa de pré-dimensionamento (Bastos): "
-                f"l* = {f2(l_star, 3)} m; n = {n}; "
-                f"h ≈ {f2(h_est * 100, 1)} cm. "
-                f"Mínimo normativo: 8,0 cm."
+                f"Pré-dimensionamento (Bastos): l* = {f2(l_star,3)} m; n = {n}; "
+                f"h estimado ≈ {f2(h_est*100,1)} cm. Mínimo aplicável: {hmin*100:.0f} cm."
             )
-
-        except (ValueError, KeyError):
-            self.lbl_est.setText(
-                "A estimativa será apresentada após a seleção da vinculação."
-            )
+        except (ValueError, KeyError, TypeError):
+            self.lbl_est.setText("A estimativa será apresentada após a seleção da vinculação.")
 
     # -----------------------------------------------------------------------
     # ETAPA 3 — RESULTADOS
@@ -1727,9 +1827,16 @@ class Janela(QMainWindow):
                 self.vao_b.value(),
                 self.cmb_vinc.currentData(),
                 self.cmb_caa.currentData(),
-                self.phi.value(),
+                float(self.phi.currentData()),
                 self.q.value(),
-                self.h.value()
+                self.h.value(),
+                g2k=self.g2k.value(),
+                fck=self.fck.value(),
+                cob=self.cob.value(),
+                tipo=self.cmb_tipo.currentData(),
+                fyk=self.cmb_aco.currentData()[1],
+                agregado_id=self.cmb_agregado.currentData(),
+                aco=self.cmb_aco.currentData()[0]
             )
 
             d, r, partes = gerar_memoria(dados)

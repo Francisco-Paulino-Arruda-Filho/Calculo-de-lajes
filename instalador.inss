@@ -1,8 +1,8 @@
 [Setup]
-AppName=Cálculo de Lajes
+AppName=SlabCalc
 AppVersion=1.0.0
 DefaultDirName={autopf}\SlabCalc
-DefaultGroupName=Cálculo de Lajes
+DefaultGroupName=SlabCalc
 OutputBaseFilename=SlabCalc-Setup-2.0.0
 OutputDir=instalador
 Compression=lzma2
@@ -15,8 +15,8 @@ UninstallDisplayIcon={app}\SlabCalc.exe
 Source: "dist\SlabCalc\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 
 [Icons]
-Name: "{group}\Cálculo de Lajes"; Filename: "{app}\SlabCalc.exe"
-Name: "{autodesktop}\Cálculo de Lajes"; Filename: "{app}\SlabCalc.exe"; Tasks: desktopicon
+Name: "{group}\SlabCalc"; Filename: "{app}\SlabCalc.exe"
+Name: "{autodesktop}\SlabCalc"; Filename: "{app}\SlabCalc.exe"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Criar atalho na área de trabalho"
